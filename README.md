@@ -126,6 +126,8 @@ Three real scientific datasets are used to evaluate ROBUST against a full-featur
 
 **Regression scores** are reported as RMSE (lower is better). Internally, ROBUST stores negative RMSE following sklearn convention so that all metrics can be maximised; the benchmark console report and README table always display positive RMSE for readability.
 
+**Note on split methodology:** All benchmarks use [BenchMake](https://github.com/amaxiom/benchmake) archetypal splits, which are adversarial by design. BenchMake selects maximally representative train/test partitions that keep the two sets apart in feature space, producing more conservative (lower) scores than conventional random splits would on the same datasets. This is intentional: the benchmark is a worst-case assessment. Scores you observe when running ROBUST on your own data with the default random splits will typically be higher. The ROBUST vs. full-feature baseline comparison within each benchmark is internally consistent because both models use the same split.
+
 Exact scores depend on the random seed and runtime environment. Run `python benchmarks/benchmark_suite.py` for a full console report, including a 25-test statistical battery for each dataset comparing ROBUST and baseline per-fold scores.
 
 ---
@@ -259,3 +261,4 @@ for scientific machine learning (v0.3). GitHub: https://github.com/amaxiom/Robus
 GitHub: [amaxiom](https://github.com/amaxiom)
 
 RobustModelMaker is developed and maintained as a tool for rigorous, reproducible machine learning in scientific research.
+
