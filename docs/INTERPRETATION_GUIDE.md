@@ -51,11 +51,14 @@ print(f"Std  AUC: {result.nested_cv_result.std_score:.4f}")
 
 ### Regression scores (negative RMSE)
 
-Regression scores are reported as **negative RMSE**: a score of `-1.23` means the root-mean-squared error is 1.23 in target units. A less negative score (closer to zero) is better. When comparing two models, a positive delta means the model with the less negative score has a lower RMSE.
+ROBUST stores regression scores as **negative RMSE** following sklearn's convention (all metrics are maximised internally). A stored score of `-1.23` means the root-mean-squared error is 1.23 in target units. A less negative stored value means lower RMSE, which is better.
+
+The benchmark console report and summary table automatically convert stored neg-RMSE values to positive RMSE for display, so you will never see negative numbers in the benchmark output. When accessing scores programmatically, negate to get RMSE:
 
 ```python
-rmse = abs(result.nested_cv_result.mean_score)
-print(f"Mean RMSE: {rmse:.3f} {target_units}")
+rmse = abs(result.nested_cv_result.mean_score)        # stored as negative
+rmse_std = result.nested_cv_result.std_score           # std is always positive
+print(f"Mean RMSE: {rmse:.3f} +/- {rmse_std:.3f} {target_units}")
 ```
 
 ### Score standard deviation
@@ -337,7 +340,7 @@ The benchmark suite (`benchmarks/benchmark_suite.py`) evaluates ROBUST on three 
 
 - 1617 samples, 462 structural chemistry descriptors, regression target: Formation_energy (eV), real NaN values
 - Algorithm: Lasso regression, task: regression
-- Floor score (minimum acceptable neg-RMSE): -8.0 (RMSE < 8 eV)
+- Floor: maximum acceptable RMSE = 8 eV (stored internally as neg-RMSE floor = -8.0)
 - Expected outcome: `preserved` or `improved`
 - This benchmark tests regression under high feature dimensionality and domain-specific sparse descriptors.
 
