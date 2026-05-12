@@ -116,13 +116,15 @@ result = run_pipeline(X, y, alg="eln", task_type="binary",
 
 Three real scientific datasets are used to evaluate ROBUST against a full-feature nested-CV baseline using the same algorithm and fold structure. The benchmark uses BenchMake archetypal splits to ensure train and test sets are representative rather than randomly sampled.
 
-| Dataset | Task | n x p | ROBUST feats | Reduction | BL score | ROBUST score | Outcome |
-|---|---|---|---|---|---|---|---|
-| SECOM Manufacturing | binary | 1254 x 590 | ~47 | ~92% | baseline AUC | comparable | preserved |
-| Urban Land Cover | multiclass | 540 x 147 | ~31 | ~79% | baseline AUC | comparable | preserved |
-| Graphene Oxide Bulk | regression | 1294 x 412 | ~68 | ~83% | baseline neg-RMSE | comparable | preserved |
+| Dataset | Task | n x p | ROBUST feats | Reduction | Metric | Outcome |
+|---|---|---|---|---|---|---|
+| SECOM Manufacturing | binary | 1254 x 590 | ~47 | ~92% | AUC (higher=better) | preserved |
+| Urban Land Cover | multiclass | 540 x 147 | ~31 | ~79% | AUC-OVR (higher=better) | preserved |
+| Graphene Oxide Bulk | regression | 1294 x 412 | ~68 | ~83% | RMSE in eV (lower=better) | preserved |
 
-**Outcome key:** `preserved` means the score difference between ROBUST and the full-feature baseline is not statistically significant (paired Wilcoxon test, p >= 0.05). ROBUST achieves comparable predictive performance while using a small fraction of the available features.
+**Outcome key:** `preserved` means the difference between ROBUST and the full-feature baseline is not statistically significant (paired Wilcoxon test, p >= 0.05). ROBUST achieves comparable predictive performance while using a small fraction of the available features.
+
+**Regression scores** are reported as RMSE (lower is better). Internally, ROBUST stores negative RMSE following sklearn convention so that all metrics can be maximised; the benchmark console report and README table always display positive RMSE for readability.
 
 Exact scores depend on the random seed and runtime environment. Run `python benchmarks/benchmark_suite.py` for a full console report, including a 25-test statistical battery for each dataset comparing ROBUST and baseline per-fold scores.
 
