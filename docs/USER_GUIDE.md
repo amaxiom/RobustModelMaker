@@ -91,9 +91,19 @@ Set `task_type` to one of:
 | `"regression"` | Continuous numeric target | Negative RMSE |
 | `"auto"` | Let ROBUST infer from `y` (see note below) | as above |
 
-**Auto-detection rules:** if `y` is float-typed and has more than 20 unique values (or > 20% of samples), ROBUST infers regression; 2 unique values gives binary; 3 to 20 gives multiclass.
+**Auto-detection rules:** if `y` is float-typed and has more than `min(20, max(3, 0.2 × n))` unique values, ROBUST infers regression; 2 unique values gives binary; 3 up to `max(20, 0.2 × n)` unique values gives multiclass; anything else falls back to regression.
 
-For scientific use it is best practice to set `task_type` explicitly rather than relying on auto-detection.
+> **Warning: `task_type="auto"` can silently misclassify your problem.** The heuristic relies on dtype and unique-value counts, which are unreliable proxies for scientific intent. Four specific failure modes to be aware of:
+>
+> 1. **Ordinal regression targets encoded as integers with few unique values.** A pain scale `[1, 2, 3, 4, 5]` has 5 unique integer values. Because it is not float-typed, the regression check is skipped, and ROBUST will classify this as multiclass and score it with AUC-OVR.
+>
+> 2. **Float targets that are actually ordinal classes.** Star ratings stored as `[1.0, 2.0, 3.0, 4.0, 5.0]` are float-typed with 5 unique values. On a typical dataset, `5 <= 20`, so ROBUST infers multiclass rather than regression.
+>
+> 3. **Large multiclass problems with more than 20 classes.** A 21-class problem with float-coded labels will have 21 unique float values. On a small dataset (where `0.2 × n < 21`), the threshold `min(20, ...)` evaluates to 20, `21 > 20` triggers the regression check, and ROBUST silently runs regression on a classification problem.
+>
+> 4. **Large datasets with many integer-coded classes.** On a 1000-sample dataset the dynamic threshold becomes `max(20, 200) = 200`, meaning any integer-labelled target with up to 200 distinct values will be treated as multiclass. A continuous integer target (e.g., counts, ranks) with 50 unique values would be misclassified as multiclass.
+>
+> **Recommendation: always set `task_type` explicitly in scientific code.** `task_type="auto"` is provided for quick exploratory use only and should never appear in analysis code you intend to publish or reproduce.
 
 **Labels:** Any hashable type is supported for classification (strings, integers, booleans). ROBUST encodes them internally and decodes predictions back to the original label space, so `predict()` always returns values in the same format as `y`.
 
