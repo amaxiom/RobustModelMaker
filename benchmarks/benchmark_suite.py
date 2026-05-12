@@ -867,14 +867,24 @@ def print_scenario_report(
     print(f"\n  {'FEATURE SELECTION COMPARISON':^{_W - 4}}")
     print(_sep)
     lbl_w = 26
+    is_reg = ds.task_type == "regression"
+    score_label = "RMSE (lower=better)" if is_reg else "score"
+    def _disp(s):
+        # For regression: display positive RMSE (negate neg-RMSE), else display as-is
+        return -s if is_reg else s
     print(f"  {'Baseline (BL)':<{lbl_w}}: {n_bl:5d} features   "
-          f"score = {score_bl:+.4f} +/- {baseline['std']:.4f}")
+          f"{score_label} = {_disp(score_bl):.4f} +/- {baseline['std']:.4f}")
     print(f"  {'ROBUST':<{lbl_w}}: {n_robust:5d} features   "
-          f"score = {score_robust_mean:+.4f} +/- {robust_result.nested_cv_result.std_score:.4f}")
+          f"{score_label} = {_disp(score_robust_mean):.4f} +/- {robust_result.nested_cv_result.std_score:.4f}")
     print(f"  {'Feature reduction':<{lbl_w}}: {reduction:5.1f}%   "
           f"({n_bl - n_robust} features removed)")
-    print(f"  {'Score delta (ROBUST - BL)':<{lbl_w}}: {delta:+.4f}   "
+    # delta is ROBUST - BL in neg-RMSE space; for display, positive delta = lower RMSE = better
+    delta_disp = -delta if is_reg else delta
+    delta_label = "RMSE delta (BL - ROBUST)" if is_reg else "Score delta (ROBUST - BL)"
+    print(f"  {delta_label:<{lbl_w}}: {delta_disp:+.4f}   "
           f"p = {p_str}  ->  outcome: {outcome}")
+    if is_reg:
+        print(f"  {'  (positive = ROBUST has lower RMSE)':<{lbl_w}}")
     if abs(score_bl) > 1e-9 and n_bl > 0 and n_robust > 0:
         spf_robust = abs(score_robust_mean) / n_robust
         spf_bl = abs(score_bl) / n_bl
@@ -895,27 +905,42 @@ def print_scenario_report(
         print(f"  ... ({len(stab) - 15} more features not shown)")
 
     # ---- Per-fold scores ----
-    print(f"\n  {'PER-FOLD SCORES  (outer CV, train split only)':^{_W - 4}}")
+    fold_hdr = ("PER-FOLD RMSE  (outer CV, train split only -- lower is better)"
+                if is_reg else
+                "PER-FOLD SCORES  (outer CV, train split only)")
+    print(f"\n  {fold_hdr:^{_W - 4}}")
     print(_sep)
     robust_scores = robust_result.nested_cv_result.outer_scores
     bl_scores = baseline["fold_scores"]
     n_folds = len(robust_scores)
-    deltas = robust_scores - bl_scores[:n_folds]
+    # For regression display: convert neg-RMSE -> RMSE (positive, lower is better)
+    r_disp = -robust_scores if is_reg else robust_scores
+    bl_disp = -bl_scores[:n_folds] if is_reg else bl_scores[:n_folds]
+    # delta: positive = ROBUST is better in both cases after sign flip for regression
+    deltas_disp = bl_disp - r_disp if is_reg else r_disp - bl_disp
+    col_label = "ROBUST_RMSE" if is_reg else "ROBUST_score"
+    bl_col_label = "BL_RMSE" if is_reg else "BL_score"
+    delta_col_label = "BL-ROBUST" if is_reg else "delta"
     fold_df = pd.DataFrame({
-        "fold":         np.arange(1, n_folds + 1),
-        "ROBUST_score": np.round(robust_scores, 5),
-        "BL_score":     np.round(bl_scores[:n_folds], 5),
-        "delta":        np.round(deltas, 5),
+        "fold":           np.arange(1, n_folds + 1),
+        col_label:        np.round(r_disp, 5),
+        bl_col_label:     np.round(bl_disp, 5),
+        delta_col_label:  np.round(deltas_disp, 5),
     })
     print(fold_df.to_string(index=False))
+    # wins: ROBUST better (higher score for classification, lower RMSE for regression)
     wins = int(np.sum(robust_scores > bl_scores[:n_folds] + 1e-6))
     losses = int(np.sum(robust_scores < bl_scores[:n_folds] - 1e-6))
-    print(f"  ROBUST higher on {wins}/{n_folds} folds, lower on {losses}/{n_folds} folds  "
+    better_label = "lower RMSE" if is_reg else "higher score"
+    print(f"  ROBUST has {better_label} on {wins}/{n_folds} folds, worse on {losses}/{n_folds} folds  "
           f"(fold-level counts; significance determined by paired test above)")
 
     # ---- Statistical test battery ----
     print(f"\n  {'STATISTICAL TEST BATTERY':^{_W - 4}}")
     print(_sep)
+    if is_reg:
+        print(f"  Note: raw scores in this table are neg-RMSE (negative values; "
+              f"higher = better). See above for RMSE display.")
     print(f"  Significance threshold: p < 0.05 (two-sided).  "
           f"*** p<0.001  ** p<0.01  * p<0.05")
     hdr = f"  {'TEST':<52} {'STATISTIC':>13}  {'P-VALUE':>14}  INTERPRETATION"
@@ -956,7 +981,7 @@ def print_summary_table(results: List[Dict[str, Any]]) -> None:
         f"  {'Scenario':<{C['name']}} {'Task':<{C['task']}} "
         f"{'n_train x p':>{C['nxp']}}  "
         f"{'ROBUST feats':>{C['rob_n']}} {'Red%':>{C['red']}}  "
-        f"{'BL score':>{C['bl_sc']}} {'ROBUST score':>{C['rob_sc']}} {'delta':>{C['delta']}}  "
+        f"{'BL score':>{C['bl_sc']}} {'ROBUST score':>{C['rob_sc']}} {'+delta':>{C['delta']}}  "
         f"{'p-val':>{C['pval']}} {'Outcome':<{C['outcome']}}"
     )
     print(hdr)
@@ -968,23 +993,32 @@ def print_summary_table(results: List[Dict[str, Any]]) -> None:
         f"{'-'*C['pval']} {'-'*C['outcome']}"
     )
     print(sep_row)
+    print(f"  {'(regression rows show RMSE -- lower is better; '}"
+          f"{'classification rows show AUC -- higher is better)'}")
     print()
     for r in results:
         n_bl = r["n_features_bl"]      # total features = what BL trained on
         n_robust = r["n_features_robust"]
         red = (1 - n_robust / n_bl) * 100
-        delta = r["score_robust"] - r["score_bl"]
+        is_reg = r["task_type"] == "regression"
+        # For display: regression shows RMSE (positive), classification shows AUC
+        sc_bl = -r["score_bl"] if is_reg else r["score_bl"]
+        sc_rob = -r["score_robust"] if is_reg else r["score_robust"]
+        # delta: positive means ROBUST is better in both display conventions
+        delta_disp = sc_bl - sc_rob if is_reg else sc_rob - sc_bl
+        # raw delta (in neg-RMSE space) still needed for _outcome
+        delta_raw = r["score_robust"] - r["score_bl"]
         n_train = r["n_samples"]
         nxp_str = f"{n_train} x {n_bl:4d}"
         p_val = _significance_p(r["stat_df"])
         p_str = f"{p_val:.3f}" if np.isfinite(p_val) else "  n/a"
-        outcome = _outcome(delta, r["stat_df"])
+        outcome = _outcome(delta_raw, r["stat_df"])
         print(
             f"  {r['name']:<{C['name']}} {r['task_type']:<{C['task']}} "
             f"{nxp_str:>{C['nxp']}}  "
             f"{n_robust:>{C['rob_n']}} {red:>{C['red']}.0f}%  "
-            f"{r['score_bl']:>{C['bl_sc']}.4f} {r['score_robust']:>{C['rob_sc']}.4f} "
-            f"{delta:>{C['delta']}.4f}  "
+            f"{sc_bl:>{C['bl_sc']}.4f} {sc_rob:>{C['rob_sc']}.4f} "
+            f"{delta_disp:>{C['delta']}.4f}  "
             f"{p_str:>{C['pval']}} {outcome:<{C['outcome']}}"
         )
     print()
