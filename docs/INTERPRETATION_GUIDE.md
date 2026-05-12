@@ -231,6 +231,8 @@ A validation score substantially higher than the nested CV estimate should promp
 
 The benchmark suite runs ROBUST alongside a full-feature nested-CV baseline using the same algorithm, fold structure, and scoring metric. This answers: how much performance is traded for the feature reduction?
 
+> **Note on split methodology:** Both ROBUST and the baseline in the benchmark suite are trained and evaluated on BenchMake archetypal splits, not random splits. This means the absolute scores are more conservative than you would expect from a typical analysis. See Section 10 for a full explanation. The ROBUST vs. baseline comparison is internally consistent because both models see the same split, but absolute scores should not be compared directly to results obtained with random train/test partitions.
+
 ### The outcome classification
 
 The benchmark reports one of three outcomes based on the paired statistical test (Wilcoxon signed-rank preferred; paired t-test if Wilcoxon is unavailable):
@@ -318,6 +320,23 @@ These are informative rather than decision-making:
 
 ## 10. Benchmark evidence
 
+### BenchMake archetypal splits: adversarial by design
+
+The benchmark suite uses [BenchMake](https://github.com/amaxiom/benchmake) to partition each dataset into train and test sets. BenchMake does not draw random samples. Instead it selects an archetypal split: the train and test sets are chosen to be maximally representative of the full dataset's diversity in feature space. Each partition covers the full range of the data distribution rather than overlapping randomly.
+
+This makes BenchMake splits **adversarial**: the model is trained and evaluated on portions of the space that are explicitly kept apart, which is harder than a random split where train and test are likely to be similar in distribution. The result is a **lower-bound performance estimate** — a conservative, worst-case assessment of how well the model generalises.
+
+**Why this matters for interpreting benchmark scores:**
+
+- Benchmark scores reported here will typically be *lower* than scores you would obtain with stratified random splits on the same dataset. This is expected and intentional.
+- If ROBUST achieves `preserved` on a BenchMake split, it is almost certain to achieve `preserved` (and likely higher absolute scores) with conventional random splits.
+- Do not directly compare the absolute scores from the benchmark suite to nested CV scores from your own ROBUST run, which uses stratified random splits internally. The split methodology alone accounts for a meaningful share of any difference.
+- The benchmark is the right tool for asking "does feature reduction hurt generalisation under stress?" It is not the right tool for estimating the score you will see in practice.
+
+**Consistency within each benchmark scenario:**
+
+Both ROBUST and the full-feature baseline use the same BenchMake train/test split for a given dataset. The comparison between them is therefore fair and internally consistent: any difference in score is attributable to feature selection, not to the split. The absolute scores, however, should be read in the context of the adversarial split methodology.
+
 The benchmark suite (`benchmarks/benchmark_suite.py`) evaluates ROBUST on three real scientific datasets:
 
 ### SECOM Semiconductor Manufacturing
@@ -343,6 +362,7 @@ The benchmark suite (`benchmarks/benchmark_suite.py`) evaluates ROBUST on three 
 - Floor: maximum acceptable RMSE = 8 eV (stored internally as neg-RMSE floor = -8.0)
 - Expected outcome: `preserved` or `improved`
 - This benchmark tests regression under high feature dimensionality and domain-specific sparse descriptors.
+- **Dataset-specific parameter override:** `stability_threshold=0.3` (overrides the global benchmark default of 0.5). Lasso selects very few features per bootstrap run by design; with only 15 bootstrap resamples and a threshold of 0.5, the benchmark would select fewer than 10 features from a 400+ descriptor problem. The lower threshold (5 of 15 bootstrap runs required) produces a chemically meaningful feature subset while still enforcing cross-bootstrap consistency.
 
 ### Reading the benchmark output
 
