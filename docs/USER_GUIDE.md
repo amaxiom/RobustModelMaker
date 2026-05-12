@@ -515,7 +515,7 @@ print(f"Original: {d['original_n_samples']} rows x {d['original_n_features']} fe
 print(f"Retained: {d['retained_n_samples']} rows x {d['retained_n_features']} features")
 ```
 
-The benchmark on the SECOM semiconductor dataset (1567 x 590 features, extensive real NaN values) confirms that ROBUST works reliably out of the box with `preserve_nans=True`.
+The benchmark on the SECOM semiconductor dataset (1567 x 590 features, extensive real NaN values) confirms that ROBUST works reliably out of the box with `preserve_nans=True`. Note that the benchmark uses BenchMake archetypal (adversarial) splits, which produce lower scores than random splits would on the same data. See the [Implementation Guide](IMPLEMENTATION_GUIDE.md#13-benchmark-split-methodology-benchmake-archetypal-splits) for details.
 
 ---
 
