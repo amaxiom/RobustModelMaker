@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.cache/
+
+# Test artefacts
+tests/performance_results/
+
+# Saved model outputs (generated at runtime)
+robust_model_results/
+*_metadata.json
+*_pipeline_result.pkl
+*_nested_cv_scores.csv
+*_nested_cv_predictions.csv
+*_stability_selection.csv
+*_selected_features.csv
+*_overview.csv
+
+# Old versions (not part of the public repo)
+Old_versions/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp

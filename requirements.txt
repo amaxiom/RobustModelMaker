@@ -1,0 +1,13 @@
+numpy>=1.24
+pandas>=1.5
+scikit-learn>=1.3
+scipy>=1.10
+
+# Optional: required only for alg="xgb"
+# xgboost>=1.7
+
+# Required for the benchmark suite only
+# benchmake
+
+# Required for running the test suites only
+pytest>=7.0
