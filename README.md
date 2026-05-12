@@ -2,7 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.3-green.svg)](CHANGELOG.md)
+[![PyPI version](https://badge.fury.io/py/robustmodelmaker.svg)](https://pypi.org/project/robustmodelmaker/)
+
 
 **A reproducible model-building pipeline for small-to-medium scientific datasets.**
 
