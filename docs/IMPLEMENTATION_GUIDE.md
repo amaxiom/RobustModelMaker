@@ -18,8 +18,9 @@ This guide describes how ROBUST works internally, how its components fit togethe
 10. [Tuning for rigor](#10-tuning-for-rigor)
 11. [Algorithm internals](#11-algorithm-internals)
 12. [Handling class imbalance](#12-handling-class-imbalance)
-13. [Understanding the scoring metrics](#13-understanding-the-scoring-metrics)
-14. [Extending ROBUST](#14-extending-robust)
+13. [Benchmark split methodology: BenchMake archetypal splits](#13-benchmark-split-methodology-benchmake-archetypal-splits)
+14. [Understanding the scoring metrics](#14-understanding-the-scoring-metrics)
+15. [Extending ROBUST](#15-extending-robust)
 
 ---
 
@@ -460,7 +461,35 @@ For extreme imbalance (< 5% minority class, as in the SECOM benchmark with ~7% f
 
 ---
 
-## 13. Understanding the scoring metrics
+## 13. Benchmark split methodology: BenchMake archetypal splits
+
+The benchmark suite uses BenchMake to partition each dataset rather than drawing random train/test splits. Understanding why this matters is essential for interpreting benchmark scores correctly.
+
+### What BenchMake does
+
+BenchMake selects an archetypal partition: the train and test sets are chosen so that each is maximally representative of the full dataset's distribution in feature space. Rather than randomly assigning samples, it identifies samples that collectively cover the extremes and interior of the feature space and places them in each partition. The result is that train and test sets are deliberately kept apart in feature space, with minimal distributional overlap.
+
+### Why this is adversarial
+
+Random splits, especially stratified ones, tend to produce train and test sets that are statistically similar: the model sees representatives of nearly every region of the input space during training. BenchMake's archetypal splits break this by ensuring the test set contains samples that are structurally distinct from the training set. This simulates a harder generalisation scenario, closer to applying a model to a genuinely new population.
+
+The consequence is that BenchMake benchmark scores are **systematically lower** than scores you would see with random splits on the same dataset. This is intentional: the benchmark is a conservative lower-bound assessment, not a typical-case estimate.
+
+### Implications for your own analyses
+
+| Scenario | What to expect |
+|---|---|
+| You run ROBUST on your data with default random splits | Scores will typically be higher than the benchmark suite reports for the same algorithm |
+| You compare your scores to the benchmark table | Lower benchmark scores do not mean ROBUST performs poorly on your data |
+| You use `pytest benchmarks/benchmark_suite.py` | The pass/fail thresholds are calibrated for the adversarial split, not for random splits |
+
+### Internal consistency of the comparison
+
+Both ROBUST and the full-feature baseline in the benchmark suite use the same BenchMake split for each dataset. The relative comparison (ROBUST vs. baseline) is therefore valid and fair: any difference in score reflects feature selection, not the split. Only the absolute scores are affected by the adversarial methodology.
+
+---
+
+## 14. Understanding the scoring metrics
 
 | Task | Metric | Score range | Best value | Notes |
 |---|---|---|---|---|
@@ -474,7 +503,7 @@ The `mean_score` and `std_score` attributes use this sign convention throughout.
 
 ---
 
-## 14. Extending ROBUST
+## 15. Extending ROBUST
 
 ### Adding a new algorithm
 
@@ -507,6 +536,10 @@ print(f"Selected: {selected}")
 
 The scoring metric is determined by `_default_scoring(task_type)`. To use a different metric, pass the sklearn scorer string as a `scoring` argument to the underlying `nested_cross_validation` call or override `_default_scoring` directly. For `permutation_importance`, pass `scoring=` explicitly:
 
+```python
+pi = maker.permutation_importance(X_val, y_val,
+                                   scoring="balanced_accuracy", n_repeats=20)
+```
 ```python
 pi = maker.permutation_importance(X_val, y_val,
                                    scoring="balanced_accuracy", n_repeats=20)
