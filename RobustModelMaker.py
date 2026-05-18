@@ -72,7 +72,7 @@ except Exception:  # pragma: no cover
     XGBRegressor = None
     _HAS_XGBOOST = False
 
-Algorithm = Literal["eln", "rf", "xgb"]
+Algorithm = Literal["eln", "rdg", "las", "log", "svm", "rf", "xgb", "mlp", "lin"]
 TaskType = Literal["auto", "binary", "multiclass", "regression"]
 ResolvedTask = Literal["binary", "multiclass", "regression"]
 PreprocessMode = Literal["auto", "standard", "none"]
@@ -124,6 +124,11 @@ class CutoffResult:
     target_specificity: float
     achieved_specificity: float
     achieved_sensitivity: float
+
+    @property
+    def bootstrap_cutoffs(self) -> np.ndarray:
+        """Alias for cutoff_distribution (the bootstrap cutoff sample array)."""
+        return self.cutoff_distribution
 
     def summary(self) -> str:
         return (
@@ -507,8 +512,6 @@ def _make_label_mapping(y: Union[np.ndarray, pd.Series, List[Any]], task_type: R
 
 def _prepare_y(y: Union[np.ndarray, pd.Series, List[Any]], task_type: ResolvedTask, label_mapping: Optional[Dict[Any, int]] = None) -> np.ndarray:
     y_arr = np.asarray(y).ravel()
-    if y_arr.ndim != 1:
-        raise ValueError("y must be a 1D vector.")
     if np.any(pd.isna(y_arr)):
         raise ValueError("y contains missing values.")
     if task_type == "regression":
@@ -1314,7 +1317,6 @@ def print_pipeline_results(result: PipelineResult) -> None:
 # saving and performance-test API expected by the v0.3 test suites.
 
 _ROBUST_ORIGINAL_RUN_PIPELINE = run_pipeline
-_ROBUST_ORIGINAL_INIT = RobustModelMaker.__init__
 
 def _robust_pipeline_result_mean_score(self):
     return float(self.nested_cv_result.mean_score)
