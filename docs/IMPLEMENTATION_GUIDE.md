@@ -112,9 +112,10 @@ During stability selection, no hyperparameter search is performed. Each algorith
 
 | Algorithm | Fixed config |
 |---|---|
-| `eln` | `alpha=0.01, l1_ratio=0.7` |
+| `eln` | classification: `C=1.0, l1_ratio=0.7`; regression: `alpha=0.01, l1_ratio=0.7` |
 | `rf` | `n_estimators=80, max_depth=10` |
 | `xgb` | `n_estimators=80, max_depth=6, learning_rate=0.05` |
+| `rdg`, `las`, `log`, `svm`, `mlp`, `lin` | constructor defaults (no override applied) |
 
 These values were chosen to give useful feature rankings without overfitting. The same configuration is used in every bootstrap run, so the only source of variation is the subsample.
 
@@ -384,31 +385,31 @@ maker = RobustModelMaker(
 
 **Nested CV search space:** `C ~ LogUniform(1e-4, 1e2)` (classification) or `alpha ~ LogUniform(1e-4, 1e2)` (regression).
 
-**Preprocessing:** always scale. L2 penalty is not scale-invariant.
+**Preprocessing:** L2 penalty is not scale-invariant; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `rdg`; use `preprocess="standard"` to enable it.
 
 ### Lasso (`las`)
 
-**Stability selection:** `LogisticRegression(penalty="l1", C=0.1, solver="liblinear")` for classification; `Lasso(alpha=0.01)` for regression. Strong L1 sparsity makes this a natural feature selector.
+**Stability selection:** `LogisticRegression(penalty="l1", solver="saga", max_iter=5000, C=1.0, class_weight="balanced")` for classification; `Lasso(max_iter=10000, alpha=1.0)` for regression. Strong L1 sparsity makes this a natural feature selector; most coefficients are zeroed, so the above-median threshold selects a small fraction of features per bootstrap run.
 
-**Nested CV search space:** `C ~ LogUniform(1e-4, 1e2)` (classification) or `alpha ~ LogUniform(1e-4, 1e2)` (regression).
+**Nested CV search space:** `C ~ LogUniform(1e-3, 1e2)` (classification) or `alpha ~ LogUniform(1e-4, 10)` (regression).
 
-**Preprocessing:** always scale.
+**Preprocessing:** L1 penalty is not scale-invariant; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `las`; use `preprocess="standard"` to enable it.
 
 ### Logistic regression (`log`) — classification only
 
-**Stability selection:** `LogisticRegression(penalty="l2", C=1.0)`. Raises an error if used with `task_type="regression"`.
+**Stability selection:** `LogisticRegression(penalty="l2", solver="lbfgs", max_iter=5000, C=1.0, class_weight="balanced")`. Raises an error if used with `task_type="regression"`.
 
-**Nested CV search space:** `C ~ LogUniform(1e-4, 1e2)`.
+**Nested CV search space:** `C ~ LogUniform(1e-3, 1e2)`.
 
-**Preprocessing:** always scale.
+**Preprocessing:** L2 penalty is not scale-invariant; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `log`; use `preprocess="standard"` to enable it.
 
 ### Linear SVM (`svm`)
 
-**Stability selection:** `LinearSVC(C=0.1)` for classification; `LinearSVR(C=0.1)` for regression. Uses `|coef_|` for importance.
+**Stability selection:** `SVC(kernel="linear", probability=True, C=1.0, class_weight="balanced")` for classification; `LinearSVR(C=1.0, max_iter=5000)` for regression. Uses `|coef_|` for importance.
 
-**Nested CV search space:** `C ~ LogUniform(1e-4, 1e2)`.
+**Nested CV search space:** `C ~ LogUniform(1e-3, 1e2)`.
 
-**Preprocessing:** always scale. SVM margin is distance-based and requires comparable feature magnitudes.
+**Preprocessing:** SVM margin is distance-based and requires comparable feature magnitudes; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `svm`; use `preprocess="standard"` to enable it.
 
 ### Random forest (`rf`)
 
@@ -428,19 +429,19 @@ maker = RobustModelMaker(
 
 ### Multi-layer perceptron (`mlp`)
 
-**Stability selection:** `MLPClassifier` or `MLPRegressor` with a single hidden layer of 100 units and `max_iter=500`. Uses permutation importance internally (no native `coef_` or `feature_importances_`).
+**Stability selection:** `MLPClassifier` or `MLPRegressor` with default architecture and `max_iter=300`. Feature importance is extracted from the first-layer weight matrix: `mean(|coefs_[0]|, axis=1)`, which gives one importance value per input feature averaged over hidden units.
 
-**Nested CV search space:** `hidden_layer_sizes`, `alpha ~ LogUniform(1e-5, 1e-1)`, `learning_rate_init ~ LogUniform(1e-4, 1e-2)`.
+**Nested CV search space:** `hidden_layer_sizes` (16 or 32 units), `alpha ~ LogUniform(1e-5, 1e-2)`, `learning_rate_init ~ LogUniform(1e-4, 1e-2)`.
 
-**Preprocessing:** always scale. Neural networks are sensitive to feature magnitude.
+**Preprocessing:** neural networks are sensitive to feature magnitude; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `mlp`; use `preprocess="standard"` to enable it.
 
 ### Ordinary least squares (`lin`) — regression only
 
 **Stability selection:** `LinearRegression()`. Raises an error if used with classification task types. Uses `|coef_|` for importance.
 
-**Nested CV search space:** no hyperparameters; a single deterministic fit per inner fold.
+**Nested CV search space:** `fit_intercept` fixed to `True`; a single deterministic fit per inner fold (no meaningful tuning).
 
-**Preprocessing:** always scale.
+**Preprocessing:** with the default `preprocess="auto"`, no scaling is applied for `lin`. OLS coefficients are scale-dependent; if your features are on very different scales, use `preprocess="standard"`.
 
 ---
 
@@ -536,10 +537,6 @@ print(f"Selected: {selected}")
 
 The scoring metric is determined by `_default_scoring(task_type)`. To use a different metric, pass the sklearn scorer string as a `scoring` argument to the underlying `nested_cross_validation` call or override `_default_scoring` directly. For `permutation_importance`, pass `scoring=` explicitly:
 
-```python
-pi = maker.permutation_importance(X_val, y_val,
-                                   scoring="balanced_accuracy", n_repeats=20)
-```
 ```python
 pi = maker.permutation_importance(X_val, y_val,
                                    scoring="balanced_accuracy", n_repeats=20)

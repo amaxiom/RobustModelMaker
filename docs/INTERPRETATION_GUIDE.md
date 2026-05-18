@@ -190,6 +190,11 @@ print(f"95% CI:              [{cutoff.cutoff_ci_lower:.4f}, {cutoff.cutoff_ci_up
 print(f"Target specificity:  {cutoff.target_specificity:.1%}")
 print(f"Achieved specificity:{cutoff.achieved_specificity:.1%}  (on training OOF predictions)")
 print(f"Achieved sensitivity:{cutoff.achieved_sensitivity:.1%}  (on training OOF predictions)")
+
+# Access the full bootstrap distribution of cutoff values
+boot_cutoffs = cutoff.bootstrap_cutoffs   # np.ndarray of length cutoff_n_bootstrap
+cutoff_std   = float(np.std(boot_cutoffs))
+print(f"Bootstrap std:       {cutoff_std:.4f}")
 ```
 
 ### Important limitations
@@ -342,7 +347,7 @@ The benchmark suite (`benchmarks/benchmark_suite.py`) evaluates ROBUST on three 
 ### SECOM Semiconductor Manufacturing
 
 - 1567 samples, 590 sensor features, binary pass/fail, ~7% failure rate, extensive NaN values
-- Algorithm: Ridge regression (logistic), task: binary classification
+- Algorithm: Random Forest (RF), task: binary classification
 - Floor score (min acceptable AUC): 0.60
 - Expected outcome: `preserved` (feature reduction with no significant AUC loss)
 - This benchmark tests ROBUST under severe class imbalance and high missingness.
@@ -350,7 +355,7 @@ The benchmark suite (`benchmarks/benchmark_suite.py`) evaluates ROBUST on three 
 ### Urban Land Cover
 
 - 675 samples, 147 spectral/texture features, 9-class aerial imagery, no NaN values
-- Algorithm: Ridge logistic regression, task: multiclass classification
+- Algorithm: Random Forest (RF), task: multiclass classification
 - Floor score (min acceptable weighted OVR AUC): 0.75
 - Expected outcome: `preserved`
 - This benchmark tests multiclass discrimination on a moderately sized, well-structured dataset.
@@ -358,11 +363,10 @@ The benchmark suite (`benchmarks/benchmark_suite.py`) evaluates ROBUST on three 
 ### Graphene Oxide Bulk
 
 - 1617 samples, 462 structural chemistry descriptors, regression target: Formation_energy (eV), real NaN values
-- Algorithm: Lasso regression, task: regression
+- Algorithm: Random Forest (RF), task: regression
 - Floor: maximum acceptable RMSE = 8 eV (stored internally as neg-RMSE floor = -8.0)
 - Expected outcome: `preserved` or `improved`
-- This benchmark tests regression under high feature dimensionality and domain-specific sparse descriptors.
-- **Dataset-specific parameter override:** `stability_threshold=0.3` (overrides the global benchmark default of 0.5). Lasso selects very few features per bootstrap run by design; with only 15 bootstrap resamples and a threshold of 0.5, the benchmark would select fewer than 10 features from a 400+ descriptor problem. The lower threshold (5 of 15 bootstrap runs required) produces a chemically meaningful feature subset while still enforcing cross-bootstrap consistency.
+- This benchmark tests regression under high feature dimensionality and domain-specific sparse descriptors. RF importance scores (MDI variance reduction) are naturally non-uniform across correlated structural descriptors, giving stability selection a discriminative frequency distribution without algorithm-specific threshold tuning.
 
 ### Reading the benchmark output
 

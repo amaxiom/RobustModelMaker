@@ -226,9 +226,13 @@ result.stability_result.summary()               # pd.DataFrame with columns:
                                                 #   feature, selection_frequency, selected
 
 # Binary classification cutoff (None for multiclass / regression)
-result.cutoff_result               # CutoffResult or None
-result.cutoff_result.cutoff_median # float: recommended decision threshold
-result.cutoff_result.summary()     # human-readable cutoff string
+result.cutoff_result                      # CutoffResult or None
+result.cutoff_result.cutoff_median        # float: recommended decision threshold
+result.cutoff_result.cutoff_ci_lower      # float: 95% CI lower bound
+result.cutoff_result.cutoff_ci_upper      # float: 95% CI upper bound
+result.cutoff_result.bootstrap_cutoffs    # np.ndarray: bootstrap cutoff sample
+                                          # (alias for cutoff_distribution)
+result.cutoff_result.summary()            # human-readable cutoff string
 
 # External validation (None unless X_validation was provided)
 result.validation_result
