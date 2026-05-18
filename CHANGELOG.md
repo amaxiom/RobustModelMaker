@@ -4,6 +4,22 @@ All notable changes to RobustModelMaker are documented here.
 
 ---
 
+## v0.3.1 (2026-05-18)
+
+### Fixed
+
+- `CutoffResult.bootstrap_cutoffs` property added as an alias for `cutoff_distribution`; previously accessing this attribute raised `AttributeError`
+- `Algorithm` type literal corrected to include all nine supported algorithms (`"eln"`, `"rdg"`, `"las"`, `"log"`, `"svm"`, `"rf"`, `"xgb"`, `"mlp"`, `"lin"`); the previous definition listed only three
+- Removed unreachable `y.ndim != 1` guard from `_prepare_y` (always `False` after `ravel()`)
+- Removed unused `_ROBUST_ORIGINAL_INIT` module-level variable
+
+### Changed
+
+- All three benchmark datasets (SECOM, Urban Land Cover, Graphene Oxide) now use Random Forest (`rf`) for both the ROBUST run and the full-feature baseline, isolating the effect of bootstrap stability selection from algorithm differences
+- Documentation corrections in Implementation Guide: `las` solver and default `C`; `svm` estimator class (`SVC` with `kernel="linear"`, not `LinearSVC`); `mlp` importance method (first-layer weight magnitudes, not permutation importance); preprocessing notes for `rdg`, `las`, `log`, `svm`, `mlp`, and `lin` under default `preprocess="auto"`
+
+---
+
 ## v0.3 (2026)
 
 ### Added
