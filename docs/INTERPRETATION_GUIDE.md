@@ -245,8 +245,8 @@ The benchmark reports one of three outcomes based on the paired statistical test
 | Outcome | Meaning |
 |---|---|
 | `preserved` | Score difference is not statistically significant (p >= 0.05). ROBUST achieves comparable performance with fewer features. This is the target result. |
-| `improved *` | ROBUST score is significantly higher (p < 0.05, delta > 0). ROBUST outperforms the full-feature model, likely because feature reduction acts as regularisation. |
-| `degraded *` | ROBUST score is significantly lower (p < 0.05, delta < 0). Feature reduction caused a measurable performance loss. |
+| `sig. better *` | ROBUST score is significantly higher (p < 0.05, delta > 0). ROBUST outperforms the full-feature model, likely because feature reduction acts as regularisation. |
+| `sig. worse *` | ROBUST score is significantly lower (p < 0.05, delta < 0). Feature reduction caused a measurable performance loss. |
 
 ### Why `preserved` is a success
 
@@ -347,26 +347,44 @@ The benchmark suite (`benchmarks/benchmark_suite.py`) evaluates ROBUST on three 
 ### SECOM Semiconductor Manufacturing
 
 - 1567 samples, 590 sensor features, binary pass/fail, ~7% failure rate, extensive NaN values
+- BenchMake split: 1253 train / 314 held-out test
 - Algorithm: Random Forest (RF), task: binary classification
 - Floor score (min acceptable AUC): 0.60
 - Expected outcome: `preserved` (feature reduction with no significant AUC loss)
+- Observed result: 301 features selected (49.0% reduction), ROBUST AUC = 0.6835 +/- 0.0630, baseline AUC = 0.6814 +/- 0.0527, delta = +0.0020, paired Wilcoxon p = 0.770, outcome `preserved`. Both ROBUST and baseline pass the AUC > 0.60 floor test (p < 0.01).
 - This benchmark tests ROBUST under severe class imbalance and high missingness.
 
 ### Urban Land Cover
 
 - 675 samples, 147 spectral/texture features, 9-class aerial imagery, no NaN values
+- BenchMake split: 540 train / 135 held-out test
 - Algorithm: Random Forest (RF), task: multiclass classification
 - Floor score (min acceptable weighted OVR AUC): 0.75
 - Expected outcome: `preserved`
+- Observed result: 66 features selected (55.1% reduction), ROBUST AUC-OVR = 0.9849 +/- 0.0092, baseline AUC-OVR = 0.9827 +/- 0.0125, delta = +0.0022, paired Wilcoxon p = 0.432, outcome `preserved`. Per-fold agreement between ROBUST and baseline is very strong (Pearson r = 0.937, p < 0.001).
 - This benchmark tests multiclass discrimination on a moderately sized, well-structured dataset.
 
 ### Graphene Oxide Bulk
 
-- 1617 samples, 462 structural chemistry descriptors, regression target: Formation_energy (eV), real NaN values
+- 1617 samples, 309 structural chemistry descriptors (after dropping all-NaN and constant columns), regression target: Formation_energy (eV), real NaN values, 19 distinct stoichiometries
+- BenchMake split: 1293 train / 324 held-out test
 - Algorithm: Random Forest (RF), task: regression
 - Floor: maximum acceptable RMSE = 8 eV (stored internally as neg-RMSE floor = -8.0)
-- Expected outcome: `preserved` or `improved`
+- Expected outcome: `preserved` or `sig. better`
+- Observed result: 150 features selected (51.5% reduction), ROBUST RMSE = 0.0343 +/- 0.0257 eV, baseline RMSE = 0.0266 +/- 0.0269 eV, delta = -0.0077 eV (ROBUST slightly higher RMSE), paired Wilcoxon p = 0.193, outcome `preserved`. Both ROBUST and baseline are well below the 8 eV RMSE floor (p < 0.001). Cohen's d = -0.28 (small effect), bootstrap 95% CI for the mean delta includes zero.
 - This benchmark tests regression under high feature dimensionality and domain-specific sparse descriptors. RF importance scores (MDI variance reduction) are naturally non-uniform across correlated structural descriptors, giving stability selection a discriminative frequency distribution without algorithm-specific threshold tuning.
+
+### Cross-scenario summary
+
+The benchmark configuration is shared across all three scenarios: `outer_cv=10`, `inner_cv=5`, `n_bootstrap=25`, `stability_threshold=0.6`, `n_iter=10`, `random_state=42`. With this configuration the most recent benchmark run (total wall-clock ~4.1 hours) produced:
+
+| Scenario | Task | n_train x p | ROBUST feats | Reduction | BL score | ROBUST score | delta | p-val | Outcome |
+|---|---|---|---|---|---|---|---|---|---|
+| SECOM Manufacturing | binary | 1253 x 590 | 301 | 49.0% | 0.6814 AUC | 0.6835 AUC | +0.0020 | 0.770 | preserved |
+| Urban Land Cover | multiclass | 540 x 147 | 66 | 55.1% | 0.9827 AUC | 0.9849 AUC | +0.0022 | 0.432 | preserved |
+| Graphene Oxide Bulk | regression | 1293 x 309 | 150 | 51.5% | 0.0266 RMSE | 0.0343 RMSE | -0.0077 | 0.193 | preserved |
+
+Score-per-feature efficiency gains (ROBUST / baseline) are 1.97x for SECOM, 2.23x for Urban Land Cover, and 2.66x for Graphene Oxide Bulk. Across all three tasks and metrics, ROBUST roughly halves the feature count with no statistically significant change in performance.
 
 ### Reading the benchmark output
 
@@ -399,9 +417,9 @@ fold on training data only. The random seed was fixed to 42 for full reproducibi
 ### Results section
 
 Report:
-- Number of features selected out of total (e.g. "47 of 590 features, 92% reduction")
-- Mean nested CV score +/- std (e.g. "AUC 0.724 +/- 0.031")
-- Comparison to full-feature baseline: score delta and statistical outcome (e.g. "comparable to the full-feature baseline, delta = -0.012, Wilcoxon p = 0.41")
+- Number of features selected out of total (e.g. "301 of 590 features, 49.0% reduction")
+- Mean nested CV score +/- std (e.g. "AUC 0.684 +/- 0.063")
+- Comparison to full-feature baseline: score delta and statistical outcome (e.g. "comparable to the full-feature baseline, delta = +0.002, Wilcoxon p = 0.77, outcome preserved")
 - Cutoff and achieved sensitivity/specificity at that cutoff (binary classification only)
 - External validation score if available
 

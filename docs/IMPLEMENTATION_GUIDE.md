@@ -89,7 +89,7 @@ When `preserve_nans=False`, ROBUST first runs `_smart_drop_nans`:
 3. Columns and rows exceeding their respective thresholds are dropped.
 4. Remaining NaNs are handled by the per-fold median imputer.
 
-Use `preserve_nans=False` when a substantial fraction of features or samples is very sparse. On the Graphene Oxide benchmark (1617 x 462, real NaN values), this approach retains a consistent feature set for all folds and prevents dimension mismatches during nested CV.
+Use `preserve_nans=False` when a substantial fraction of features or samples is very sparse. On the Graphene Oxide benchmark (1617 x 309 after dropping all-NaN and constant columns), this approach retains a consistent feature set for all folds and prevents dimension mismatches during nested CV.
 
 ---
 
