@@ -52,6 +52,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import (
     ElasticNet,
     Lasso,
+    LinearRegression,
     LogisticRegression,
     Ridge,
 )
@@ -104,11 +105,11 @@ robust = _load_robust_module()
 # ---------------------------------------------------------------------------
 
 ROBUST_PARAMS: Dict[str, Any] = dict(
-    outer_cv=5,
-    inner_cv=2,
-    n_bootstrap=15,
-    n_iter=8,
-    stability_threshold=0.5,
+    outer_cv=10,
+    inner_cv=5,
+    n_bootstrap=25,
+    n_iter=10,
+    stability_threshold=0.6,
     cutoff_n_bootstrap=100,
     random_state=42,
     n_jobs=1,
@@ -173,6 +174,7 @@ class BenchmarkDataset:
         floor_score: float,
         train_idx: Optional[np.ndarray] = None,
         test_idx: Optional[np.ndarray] = None,
+        robust_params_override: Optional[Dict[str, Any]] = None,
     ):
         self.name = name
         self.description = description
@@ -183,6 +185,8 @@ class BenchmarkDataset:
         self.floor_score = floor_score
         self.train_idx = train_idx
         self.test_idx = test_idx
+        # Per-dataset overrides for ROBUST_PARAMS (merged at run time; ROBUST_PARAMS are the base).
+        self.robust_params_override: Dict[str, Any] = robust_params_override or {}
 
     # ------------------------------------------------------------------
     # Convenience split accessors (fall back to full dataset when no
@@ -265,7 +269,7 @@ def _load_secom() -> BenchmarkDataset:
         X=X,
         y=y,
         task_type="binary",
-        alg="rdg",
+        alg="rf",
         floor_score=0.60,
         train_idx=train_idx,
         test_idx=test_idx,
@@ -314,7 +318,7 @@ def _load_urban_land_cover() -> BenchmarkDataset:
         X=X,
         y=y,
         task_type="multiclass",
-        alg="rdg",
+        alg="rf",
         floor_score=0.75,
         train_idx=train_idx,
         test_idx=test_idx,
@@ -382,10 +386,14 @@ def _load_graphene_oxide() -> BenchmarkDataset:
         X=X,
         y=y,
         task_type="regression",
-        alg="las",
+        alg="rf",
         floor_score=-8.0,
         train_idx=train_idx,
         test_idx=test_idx,
+        # Random forest is used for all three benchmarks for consistency.
+        # RF importance scores (MDI variance reduction) are naturally non-uniform
+        # across the descriptor space, giving the bootstrap stability selection a
+        # discriminative frequency distribution without algorithm-specific tuning.
     )
 
 
@@ -396,35 +404,128 @@ def _load_graphene_oxide() -> BenchmarkDataset:
 def _build_baseline_estimator(
     task_type: str, alg: str, seed: int
 ) -> Tuple[Any, Dict, str]:
-    """Return (sklearn_pipeline, param_distributions, scoring_string)."""
+    """Return (sklearn_pipeline, param_distributions, scoring_string).
+
+    The baseline always uses the same algorithm family as ROBUST so that the
+    comparison measures the effect of stability selection alone, not a
+    difference in model family.
+    """
     pre = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler()),
     ])
+
     if task_type == "regression":
-        if alg == "las":
+        scoring = "neg_root_mean_squared_error"
+        if alg == "eln":
+            mdl = ElasticNet(max_iter=10_000)
+            params = {
+                "model__alpha":    loguniform(1e-4, 1e1),
+                "model__l1_ratio": uniform(0, 1),
+            }
+        elif alg == "las":
             mdl = Lasso(max_iter=10_000, random_state=seed)
             params = {"model__alpha": loguniform(1e-4, 1e1)}
-        else:
+        elif alg == "lin":
+            mdl = LinearRegression()
+            params = {"model__fit_intercept": [True, False]}
+        elif alg == "rf":
+            from sklearn.ensemble import RandomForestRegressor
+            mdl = RandomForestRegressor(random_state=seed, n_jobs=1)
+            params = {
+                "model__n_estimators": [100, 200],
+                "model__max_depth":    [None, 10, 20],
+            }
+        elif alg == "svm":
+            from sklearn.svm import LinearSVR
+            mdl = LinearSVR(random_state=seed, max_iter=5000)
+            params = {"model__C": loguniform(1e-3, 1e2)}
+        elif alg == "mlp":
+            from sklearn.neural_network import MLPRegressor
+            mdl = MLPRegressor(max_iter=300, random_state=seed)
+            params = {
+                "model__hidden_layer_sizes": [(64,), (128,), (64, 32)],
+                "model__alpha":              loguniform(1e-5, 1e-1),
+            }
+        elif alg == "xgb":
+            try:
+                from xgboost import XGBRegressor
+            except ImportError as exc:
+                raise DataUnavailable(
+                    "XGBoost not installed. Run: pip install xgboost"
+                ) from exc
+            mdl = XGBRegressor(random_state=seed, verbosity=0, n_jobs=1)
+            params = {
+                "model__n_estimators":  [100, 200],
+                "model__max_depth":     [3, 6],
+                "model__learning_rate": loguniform(0.01, 0.3),
+            }
+        else:  # rdg or unrecognised
             mdl = Ridge(random_state=seed)
             params = {"model__alpha": loguniform(1e-4, 1e2)}
-        pipe = Pipeline([("pre", pre), ("model", mdl)])
-        scoring = "neg_root_mean_squared_error"
-    else:
+
+    else:  # binary or multiclass classification
+        scoring = "roc_auc" if task_type == "binary" else "roc_auc_ovr_weighted"
         if alg == "eln":
             mdl = LogisticRegression(
                 penalty="elasticnet", solver="saga", l1_ratio=0.5,
                 max_iter=5000, random_state=seed, class_weight="balanced",
             )
-            params = {"model__C": loguniform(1e-3, 1e2), "model__l1_ratio": uniform(0, 1)}
-        else:
+            params = {
+                "model__C":       loguniform(1e-3, 1e2),
+                "model__l1_ratio": uniform(0, 1),
+            }
+        elif alg == "las":
+            mdl = LogisticRegression(
+                penalty="l1", solver="saga",
+                max_iter=5000, random_state=seed, class_weight="balanced",
+            )
+            params = {"model__C": loguniform(1e-3, 1e2)}
+        elif alg == "svm":
+            from sklearn.svm import SVC
+            mdl = SVC(
+                kernel="linear", probability=True,
+                random_state=seed, class_weight="balanced",
+            )
+            params = {"model__C": loguniform(1e-3, 1e2)}
+        elif alg == "rf":
+            from sklearn.ensemble import RandomForestClassifier
+            mdl = RandomForestClassifier(
+                random_state=seed, class_weight="balanced", n_jobs=1,
+            )
+            params = {
+                "model__n_estimators": [100, 200],
+                "model__max_depth":    [None, 10, 20],
+            }
+        elif alg == "mlp":
+            from sklearn.neural_network import MLPClassifier
+            mdl = MLPClassifier(max_iter=300, random_state=seed)
+            params = {
+                "model__hidden_layer_sizes": [(64,), (128,), (64, 32)],
+                "model__alpha":              loguniform(1e-5, 1e-1),
+            }
+        elif alg == "xgb":
+            try:
+                from xgboost import XGBClassifier
+            except ImportError as exc:
+                raise DataUnavailable(
+                    "XGBoost not installed. Run: pip install xgboost"
+                ) from exc
+            mdl = XGBClassifier(random_state=seed, verbosity=0, n_jobs=1,
+                                use_label_encoder=False, eval_metric="logloss")
+            params = {
+                "model__n_estimators":  [100, 200],
+                "model__max_depth":     [3, 6],
+                "model__learning_rate": loguniform(0.01, 0.3),
+            }
+        else:  # rdg, log, or unrecognised -- L2 logistic regression
             mdl = LogisticRegression(
                 penalty="l2", solver="lbfgs",
                 max_iter=5000, random_state=seed, class_weight="balanced",
             )
             params = {"model__C": loguniform(1e-3, 1e2)}
-        pipe = Pipeline([("pre", pre), ("model", mdl)])
-        scoring = "roc_auc" if task_type == "binary" else "roc_auc_ovr_weighted"
+
+    pipe = Pipeline([("pre", pre), ("model", mdl)])
     return pipe, params, scoring
 
 
@@ -770,19 +871,22 @@ def _fmt_stat(v: Any) -> str:
 
 
 def _fmt_p(v: Any) -> str:
+    # All branches return exactly 13 characters so the column aligns with the header.
+    # Scientific notation (p<0.001): "1.234e-05 ***" = 9 + 4 = 13
+    # Fixed notation (p>=0.001):     "  0.01234 ** " = 2 + 7 + 4 = 13
     try:
         p = float(v)
     except (TypeError, ValueError):
-        return "            "
+        return "             "   # 13 spaces
     if np.isnan(p):
-        return "            "
+        return "             "   # 13 spaces
     if p < 0.001:
-        return f"{p:.3e} ***"
+        return f"{p:.3e} ***"    # 13 chars
     if p < 0.01:
-        return f"{p:.5f} ** "
+        return f"  {p:.5f} ** "  # 13 chars
     if p < 0.05:
-        return f"{p:.5f} *  "
-    return f"{p:.5f}    "
+        return f"  {p:.5f} *  "  # 13 chars
+    return f"  {p:.5f}    "      # 13 chars
 
 
 def _significance_p(stat_df: pd.DataFrame) -> float:
@@ -808,14 +912,18 @@ def _outcome(delta: float, stat_df: pd.DataFrame) -> str:
     """Classify the ROBUST result relative to baseline.
 
     The goal of RobustModelMaker is feature reduction while *preserving*
-    predictive performance.  A binary 'winner' label based on a fixed score
-    threshold is misleading when differences are small or noisy.  Instead,
-    statistical significance of the fold-score difference determines the label:
+    predictive performance.  The stability-selected subset is robust across
+    bootstrap resamples, not globally optimal for any single model fit; a
+    small non-significant performance difference from the full-feature baseline
+    is the expected and correct outcome.
 
-      preserved   score difference is not significant (p >= 0.05) -- the
-                  primary success criterion: fewer features, no real loss
-      improved *  score is significantly higher (p < 0.05, delta > 0)
-      degraded *  score is significantly lower  (p < 0.05, delta < 0)
+    Labels:
+      preserved      no statistically significant difference (p >= 0.05) --
+                     the primary success criterion: fewer features, no real loss
+      sig. better *  score is significantly higher (p < 0.05, delta > 0) --
+                     unusual; may indicate baseline noise features were harmful
+      sig. worse *   score is significantly lower  (p < 0.05, delta < 0) --
+                     the stability threshold may be too aggressive for this data
 
     The p-value threshold (0.05) is the conventional two-sided alpha used
     across the rest of the test battery; the asterisk (*) flags significance.
@@ -823,7 +931,7 @@ def _outcome(delta: float, stat_df: pd.DataFrame) -> str:
     p = _significance_p(stat_df)
     if np.isnan(p) or p >= 0.05:
         return "preserved"
-    return "improved *" if delta > 0 else "degraded *"
+    return "sig. better *" if delta > 0 else "sig. worse *"
 
 
 def print_scenario_report(
@@ -890,8 +998,8 @@ def print_scenario_report(
         spf_bl = abs(score_bl) / n_bl
         print(f"  {'Efficiency gain':<{lbl_w}}: {spf_robust / max(spf_bl, 1e-15):.2f}x   "
               f"score-per-feature (ROBUST / BL)")
-    print(f"\n  Outcome key: 'preserved' = no significant performance loss (p >= 0.05); "
-          f"'improved *' / 'degraded *' = p < 0.05")
+    print(f"\n  Outcome key: 'preserved' = performance maintained with reduced features (p >= 0.05, primary goal); "
+          f"'sig. worse *' = significant loss (p < 0.05)")
 
     # ---- Stability-selected features ----
     print(f"\n  {'STABILITY-SELECTED FEATURES  (top 15 by bootstrap frequency)':^{_W - 4}}")
@@ -928,12 +1036,13 @@ def print_scenario_report(
         delta_col_label:  np.round(deltas_disp, 5),
     })
     print(fold_df.to_string(index=False))
-    # wins: ROBUST better (higher score for classification, lower RMSE for regression)
-    wins = int(np.sum(robust_scores > bl_scores[:n_folds] + 1e-6))
-    losses = int(np.sum(robust_scores < bl_scores[:n_folds] - 1e-6))
-    better_label = "lower RMSE" if is_reg else "higher score"
-    print(f"  ROBUST has {better_label} on {wins}/{n_folds} folds, worse on {losses}/{n_folds} folds  "
-          f"(fold-level counts; significance determined by paired test above)")
+    # Fold-level delta summary: how consistent is the difference across folds?
+    n_pos = int(np.sum(robust_scores > bl_scores[:n_folds] + 1e-6))
+    n_neg = int(np.sum(robust_scores < bl_scores[:n_folds] - 1e-6))
+    n_tie = n_folds - n_pos - n_neg
+    sign_str = f"+:{n_pos}  -:{n_neg}  ~:{n_tie}"
+    print(f"  Fold delta sign distribution (ROBUST vs BL):  {sign_str}  "
+          f"(statistical significance determined by paired test above)")
 
     # ---- Statistical test battery ----
     print(f"\n  {'STATISTICAL TEST BATTERY':^{_W - 4}}")
@@ -943,9 +1052,9 @@ def print_scenario_report(
               f"higher = better). See above for RMSE display.")
     print(f"  Significance threshold: p < 0.05 (two-sided).  "
           f"*** p<0.001  ** p<0.01  * p<0.05")
-    hdr = f"  {'TEST':<52} {'STATISTIC':>13}  {'P-VALUE':>14}  INTERPRETATION"
+    hdr = f"  {'TEST':<52} {'STATISTIC':>12}  {'P-VALUE':>13}  INTERPRETATION"
     print(hdr)
-    print(f"  {'-' * 51} {'-' * 13}  {'-' * 14}  {'-' * 24}")
+    print(f"  {'-' * 52} {'-' * 12}  {'-' * 13}  {'-' * 22}")
     for _, r in stat_df.iterrows():
         stat_s = _fmt_stat(r["statistic"])
         p_s = _fmt_p(r["p_value"])
@@ -974,8 +1083,9 @@ def print_summary_table(results: List[Dict[str, Any]]) -> None:
     print("  CROSS-SCENARIO SUMMARY")
     print(_TSEP)
     print(_LEGEND)
-    print(f"  Outcome: 'preserved' = score not significantly different from BL (p >= 0.05, two-sided paired test)")
-    print(f"           'improved *' / 'degraded *' = statistically significant difference (p < 0.05)")
+    print(f"  Goal: feature reduction while preserving predictive performance.")
+    print(f"  Outcome: 'preserved' = no significant difference from full-feature baseline (p >= 0.05) -- primary success criterion")
+    print(f"           'sig. worse *' = significant performance cost (p < 0.05)  |  'sig. better *' = unexpected improvement")
     print(_tsep)
     hdr = (
         f"  {'Scenario':<{C['name']}} {'Task':<{C['task']}} "
@@ -1035,9 +1145,15 @@ def run_scenario(ds: BenchmarkDataset, verbose: bool = True) -> Dict[str, Any]:
     if verbose:
         print(f"\n>>> {ds.name}: running ROBUST({ds.alg.upper()}, {ds.task_type}) ...", flush=True)
 
+    # Merge global params with any dataset-specific overrides
+    scenario_params = {**ROBUST_PARAMS, **ds.robust_params_override}
+    if ds.robust_params_override and verbose:
+        overrides = ", ".join(f"{k}={v}" for k, v in ds.robust_params_override.items())
+        print(f"    (dataset-specific overrides: {overrides})", flush=True)
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        maker = robust.RobustModelMaker(alg=ds.alg, task_type=ds.task_type, **ROBUST_PARAMS)
+        maker = robust.RobustModelMaker(alg=ds.alg, task_type=ds.task_type, **scenario_params)
         maker.fit(ds.X_train, ds.y_train)
     robust_result = maker.result_
 
@@ -1286,6 +1402,20 @@ class TestGrapheneOxide:
             f"Expected >=10% reduction for GO descriptors; got {reduction:.1%}."
         )
 
+    def test_selected_features_not_too_few(self, graphene_result):
+        """Guard against too few features being selected from the large descriptor space.
+
+        Random forest importance scores (MDI variance reduction) are naturally non-uniform
+        across correlated descriptors, so bootstrap stability selection produces a
+        discriminative frequency distribution without algorithm-specific overrides.
+        This test ensures the result is physically plausible (>= 10 selected features).
+        """
+        n_selected = graphene_result["n_features_robust"]
+        assert n_selected >= 10, (
+            f"Graphene Oxide benchmark selected only {n_selected} features. "
+            "The stability_threshold in robust_params_override may be too aggressive."
+        )
+
     def test_robust_score_above_floor(self, graphene_result):
         r = graphene_result
         floor = r["dataset"].floor_score
@@ -1417,8 +1547,9 @@ if __name__ == "__main__":
           f"Stability threshold={ROBUST_PARAMS['stability_threshold']}")
     print(_SEP)
     print(_LEGEND)
-    print(f"  Outcome: 'preserved' = ROBUST score not significantly different from BL (p >= 0.05)")
-    print(f"           'improved *' / 'degraded *' = statistically significant change (p < 0.05)")
+    print(f"  Goal: feature reduction while preserving predictive performance.")
+    print(f"  Outcome: 'preserved' = no significant difference from full-feature baseline (p >= 0.05) -- primary success criterion")
+    print(f"           'sig. worse *' = significant performance cost (p < 0.05)  |  'sig. better *' = unexpected improvement")
     print(_SEP)
 
     loaders = [_load_secom, _load_urban_land_cover, _load_graphene_oxide]
