@@ -2,8 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![PyPI version](https://badge.fury.io/py/robustmodelmaker.svg)](https://pypi.org/project/robustmodelmaker/)
-
+[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](CHANGELOG.md)
 
 **A reproducible model-building pipeline for small-to-medium scientific datasets.**
 
@@ -115,21 +114,25 @@ result = run_pipeline(X, y, alg="eln", task_type="binary",
 
 ## Selected results from the benchmark suite
 
-Three real scientific datasets are used to evaluate ROBUST against a full-feature nested-CV baseline using the same algorithm and fold structure. The benchmark uses BenchMake archetypal splits to ensure train and test sets are representative rather than randomly sampled.
+Three real scientific datasets are used to evaluate ROBUST against a full-feature nested-CV baseline using the same algorithm and fold structure. All three benchmarks use Random Forest (`rf`) for both ROBUST and the baseline, isolating the effect of bootstrap stability selection from any algorithm differences. The benchmark uses BenchMake archetypal splits to ensure train and test sets are representative rather than randomly sampled.
 
-| Dataset | Task | n x p | ROBUST feats | Reduction | Metric | Outcome |
-|---|---|---|---|---|---|---|
-| SECOM Manufacturing | binary | 1254 x 590 | ~47 | ~92% | AUC (higher=better) | preserved |
-| Urban Land Cover | multiclass | 540 x 147 | ~31 | ~79% | AUC-OVR (higher=better) | preserved |
-| Graphene Oxide Bulk | regression | 1294 x 412 | ~68 | ~83% | RMSE in eV (lower=better) | preserved |
+| Dataset | Task | n_train x p | ROBUST feats | Reduction | BL score | ROBUST score | p | Outcome |
+|---|---|---|---|---|---|---|---|---|
+| SECOM Manufacturing | binary | 1253 x 590 | 301 | 49.0% | 0.6814 AUC | 0.6835 AUC | 0.770 | preserved |
+| Urban Land Cover | multiclass | 540 x 147 | 66 | 55.1% | 0.9827 AUC | 0.9849 AUC | 0.432 | preserved |
+| Graphene Oxide Bulk | regression | 1293 x 309 | 150 | 51.5% | 0.0266 RMSE | 0.0343 RMSE | 0.193 | preserved |
 
-**Outcome key:** `preserved` means the difference between ROBUST and the full-feature baseline is not statistically significant (paired Wilcoxon test, p >= 0.05). ROBUST achieves comparable predictive performance while using a small fraction of the available features.
+Classification metrics are AUC-ROC (binary) and weighted OVR AUC (multiclass), higher is better. Regression metric is RMSE in eV, lower is better. The p-value column is from the paired Wilcoxon signed-rank test on per-fold scores. Across all three tasks ROBUST roughly halves the feature count with no statistically significant change in performance, yielding score-per-feature efficiency gains of 1.97x (SECOM), 2.23x (Urban Land Cover), and 2.66x (Graphene Oxide).
+
+**Benchmark configuration:** `outer_cv=10`, `inner_cv=5`, `n_bootstrap=25`, `stability_threshold=0.6`, `n_iter=10`, `random_state=42`. These differ from the production defaults (`n_bootstrap=100`, `stability_threshold=0.7`, `n_iter=100`) because the full benchmark runs ~4 hours of wall-clock time as configured; production defaults would multiply that several-fold.
+
+**Outcome key:** `preserved` is the primary success criterion: the stability-selected feature subset achieves statistically equivalent performance to the full-feature baseline (paired Wilcoxon, p >= 0.05) while using a fraction of the features. The selected features are robust across bootstrap resamples of the training data, not optimal for any single model fit; a small non-significant performance difference from the baseline is the expected and intended outcome. The other two outcomes the benchmark can return are `sig. better *` (unexpected improvement) and `sig. worse *` (significant loss).
 
 **Regression scores** are reported as RMSE (lower is better). Internally, ROBUST stores negative RMSE following sklearn convention so that all metrics can be maximised; the benchmark console report and README table always display positive RMSE for readability.
 
 **Note on split methodology:** All benchmarks use [BenchMake](https://github.com/amaxiom/benchmake) archetypal splits, which are adversarial by design. BenchMake selects maximally representative train/test partitions that keep the two sets apart in feature space, producing more conservative (lower) scores than conventional random splits would on the same datasets. This is intentional: the benchmark is a worst-case assessment. Scores you observe when running ROBUST on your own data with the default random splits will typically be higher. The ROBUST vs. full-feature baseline comparison within each benchmark is internally consistent because both models use the same split.
 
-Exact scores depend on the random seed and runtime environment. Run `python benchmarks/benchmark_suite.py` for a full console report, including a 25-test statistical battery for each dataset comparing ROBUST and baseline per-fold scores.
+Exact scores depend on the random seed and runtime environment. Run `python benchmarks/benchmark_suite.py` or open `benchmarks/Benchmark_Suite.ipynb` for a full console report, including a 25+ test statistical battery for each dataset comparing ROBUST and baseline per-fold scores.
 
 ---
 
@@ -262,4 +265,3 @@ for scientific machine learning (v0.3). GitHub: https://github.com/amaxiom/Robus
 GitHub: [amaxiom](https://github.com/amaxiom)
 
 RobustModelMaker is developed and maintained as a tool for rigorous, reproducible machine learning in scientific research.
-

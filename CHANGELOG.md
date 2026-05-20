@@ -17,6 +17,9 @@ All notable changes to RobustModelMaker are documented here.
 
 - All three benchmark datasets (SECOM, Urban Land Cover, Graphene Oxide) now use Random Forest (`rf`) for both the ROBUST run and the full-feature baseline, isolating the effect of bootstrap stability selection from algorithm differences
 - Documentation corrections in Implementation Guide: `las` solver and default `C`; `svm` estimator class (`SVC` with `kernel="linear"`, not `LinearSVC`); `mlp` importance method (first-layer weight magnitudes, not permutation importance); preprocessing notes for `rdg`, `las`, `log`, `svm`, `mlp`, and `lin` under default `preprocess="auto"`
+- README, pypi_staging README, and Interpretation Guide refreshed with current benchmark results: SECOM 301/590 features (49.0% reduction, AUC 0.6835 vs 0.6814, p=0.770, preserved); Urban Land Cover 66/147 features (55.1% reduction, AUC 0.9849 vs 0.9827, p=0.432, preserved); Graphene Oxide Bulk 150/309 features (51.5% reduction, RMSE 0.0343 vs 0.0266 eV, p=0.193, preserved). Previous tables overstated reduction percentages (e.g. ~92% for SECOM) and used incorrect train sizes and feature counts; numbers now match the `benchmarks/Benchmark_Suite.ipynb` run output exactly.
+- Interpretation Guide outcome labels corrected from `improved *` / `degraded *` to `sig. better *` / `sig. worse *` to match the actual benchmark console output.
+- Implementation Guide Graphene Oxide reference updated from 1617 x 462 to 1617 x 309 (post-cleanup column count).
 
 ---
 
