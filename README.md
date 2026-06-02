@@ -253,8 +253,15 @@ print(pi.summary().head(10))
 If you use RobustModelMaker in your research, please cite:
 
 ```
-Barnard, A. S. (2026). RobustModelMaker: A reproducible stability-selection pipeline
-for scientific machine learning (v0.3). GitHub: https://github.com/amaxiom/RobustModelMaker
+@misc{barnard2026robust,
+      title={RobustModelMaker: Coupling Bootstrap Stability Selection with Leakage-Safe Nested Cross-Validation for Scientific Machine Learning}, 
+      author={Amanda S Barnard},
+      year={2026},
+      eprint={2606.01566},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2606.01566}, 
+}
 ```
 
 ---
