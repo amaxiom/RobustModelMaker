@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.3-green.svg)](CHANGELOG.md)
 
 **A reproducible model-building pipeline for small-to-medium scientific datasets.**
 
@@ -37,7 +37,7 @@ The result is a model built on a smaller, more reproducible feature set whose es
 | Post-hoc analysis | Permutation importance, SHAP-ready export, feature stability plots |
 | External validation | One-call evaluation on a held-out set with full metric suite |
 | Reproducibility | Fully deterministic given a fixed random seed, verified by test suite |
-| Save/load | JSON metadata, CSV tables, and pickle of the fitted result |
+| Saving | JSON metadata, CSV tables, a text summary, and a pickle of the fitted result |
 
 ---
 
@@ -105,7 +105,7 @@ result = run_pipeline(X, y, alg="eln", task_type="binary",
 | `las` | Lasso / L1 logistic | all | Sparse coefficients; strong feature selector |
 | `log` | L2 logistic regression | classification | Reliable baseline for binary and multiclass |
 | `svm` | Linear SVM | all | Effective in high-dimensional spaces |
-| `rf` | Random forest | all | Non-linear; no scaling needed; class_weight balanced |
+| `rf` | Random forest | all | Non-linear; no scaling needed; class_weight balanced_subsample |
 | `xgb` | XGBoost | all | Highest raw performance; requires xgboost package |
 | `mlp` | Multi-layer perceptron | all | Neural baseline; slower on small datasets |
 | `lin` | Linear regression (OLS) | regression only | Interpretable; no regularisation |
@@ -124,7 +124,7 @@ Three real scientific datasets are used to evaluate ROBUST against a full-featur
 
 Classification metrics are AUC-ROC (binary) and weighted OVR AUC (multiclass), higher is better. Regression metric is RMSE in eV, lower is better. The p-value column is from the paired Wilcoxon signed-rank test on per-fold scores. Across all three tasks ROBUST roughly halves the feature count with no statistically significant change in performance, yielding score-per-feature efficiency gains of 1.97x (SECOM), 2.23x (Urban Land Cover), and 2.66x (Graphene Oxide).
 
-**Benchmark configuration:** `outer_cv=10`, `inner_cv=5`, `n_bootstrap=25`, `stability_threshold=0.6`, `n_iter=10`, `random_state=42`. These differ from the production defaults (`n_bootstrap=100`, `stability_threshold=0.7`, `n_iter=100`) because the full benchmark runs ~4 hours of wall-clock time as configured; production defaults would multiply that several-fold.
+**Benchmark configuration:** `outer_cv=10`, `inner_cv=10`, `n_bootstrap=100`, `n_iter=100`, `cutoff_n_bootstrap=500`, `random_state=42`, `n_jobs=1`. Apart from the selection threshold these are the production defaults. The base `stability_threshold` is 0.75 rather than the library default of 0.70, so that the benchmark operates at a more demanding selection criterion. Per-dataset thresholds from `tools/Threshold_Optimisation.ipynb` override the base value where available: 0.60 for SECOM Manufacturing and 0.80 for Urban Land Cover; Graphene Oxide Bulk uses the base 0.75. The full benchmark takes several hours of wall-clock time at these settings.
 
 **Outcome key:** `preserved` is the primary success criterion: the stability-selected feature subset achieves statistically equivalent performance to the full-feature baseline (paired Wilcoxon, p >= 0.05) while using a fraction of the features. The selected features are robust across bootstrap resamples of the training data, not optimal for any single model fit; a small non-significant performance difference from the baseline is the expected and intended outcome. The other two outcomes the benchmark can return are `sig. better *` (unexpected improvement) and `sig. worse *` (significant loss).
 
@@ -141,15 +141,19 @@ Exact scores depend on the random seed and runtime environment. Run `python benc
 ```
 RobustModelMaker/
 ├── RobustModelMaker.py              Single-file library (all you need to use ROBUST)
+├── README.md                        This file
 ├── requirements.txt                 Minimum dependency versions
+├── pytest.ini                       Test discovery configuration
 ├── LICENSE                          MIT
 ├── CHANGELOG.md                     Version history
 │
 ├── tests/
-│   ├── unit_test_suite.py           96+ unit tests covering all algorithms, task types,
-│   │                                edge cases, and API contracts
-│   ├── performance_test_suite.py    Runtime and memory budget tests
+│   ├── unit_test_suite.py           102 tests: every algorithm, every task type,
+│   │                                and the public API contracts
+│   ├── edge_case_test_suite.py      75 tests: validation failures, defensive
+│   │                                fallbacks, verbose output, private helpers
 │   ├── reproducibility_test_suite.py  30 determinism tests (same seed -> same result)
+│   ├── performance_test_suite.py    Runtime and memory budget guards
 │   └── Test_Suite.ipynb             Interactive test runner notebook
 │
 ├── benchmarks/
@@ -158,32 +162,64 @@ RobustModelMaker/
 │   ├── Benchmark_Suite.ipynb        Interactive benchmark runner
 │   └── Graphene_Oxide_Bulk.csv      CSIRO benchmark dataset (local; not downloaded)
 │
-├── docs/
-│   ├── USER_GUIDE.md                All parameters, methods, and usage patterns
-│   ├── IMPLEMENTATION_GUIDE.md      Internal design, tuning, and extension guide
-│   └── INTERPRETATION_GUIDE.md      How to read and report results correctly
+├── tools/
+│   ├── threshold_optimizer.py       Multi-objective search over stability_threshold
+│   ├── algorithm_consensus.py       Consensus feature selection across algorithms
+│   ├── Threshold_Optimisation.ipynb Interactive threshold sweep
+│   ├── Algorithm_Consensus.ipynb    Interactive consensus runner
+│   └── Graphene_Oxide_Bulk.csv      Dataset used by both notebooks
 │
+├── examples/
+│   ├── PLCO_Ovarian_Cancer_Biomarkers.ipynb       Binary classification worked example
+│   └── Superconductor_Critical_Temperature.ipynb  Regression worked example
+│
+└── docs/
+    ├── USER_GUIDE.md                All parameters, methods, and usage patterns
+    ├── IMPLEMENTATION_GUIDE.md      Internal design, tuning, and extension guide
+    └── INTERPRETATION_GUIDE.md      How to read and report results correctly
 ```
 
 ---
 
 ## Running the tests
 
+The suites are named `*_test_suite.py`, which is not one of pytest's default
+discovery patterns. `pytest.ini` in the repository root registers the pattern, so
+plain `pytest` works from the root. Naming a file explicitly always works.
+
 ```bash
-# Unit tests (all algorithms, all task types, edge cases)
+# Everything except the benchmarks (about 2.5 minutes)
+pytest
+
+# Unit tests (every algorithm, every task type, API contracts)
 pytest tests/unit_test_suite.py -v
 
-# Performance and memory budget tests
-RUN_PERFORMANCE=1 pytest tests/performance_test_suite.py -v -s
+# Include the slower MLP and XGBoost end-to-end runs
+RUN_SLOW=1 pytest tests/unit_test_suite.py -v
+
+# Edge cases (validation failures, defensive fallbacks, private helpers)
+pytest tests/edge_case_test_suite.py -v
 
 # Reproducibility tests (determinism verification)
 pytest tests/reproducibility_test_suite.py -v
+
+# Performance and memory budget tests
+RUN_PERFORMANCE=1 pytest tests/performance_test_suite.py -v -s
 
 # Benchmarks (requires network for SECOM and Urban Land Cover datasets)
 pytest benchmarks/benchmark_suite.py -v -s
 
 # Full console benchmark report
 python benchmarks/benchmark_suite.py
+```
+
+Statement coverage of `RobustModelMaker.py` is 100 per cent across the unit,
+edge-case and reproducibility suites. Measure it with a whole-directory scope and
+filter the report, never by narrowing `--cov` to the module:
+
+```bash
+RUN_SLOW=1 coverage run --source=. -m pytest tests/unit_test_suite.py tests/edge_case_test_suite.py tests/reproducibility_test_suite.py
+coverage report --include="RobustModelMaker.py" -m
 ```
 
 ---
@@ -252,15 +288,15 @@ print(pi.summary().head(10))
 
 If you use RobustModelMaker in your research, please cite:
 
-```
+```bibtex
 @misc{barnard2026robust,
-      title={RobustModelMaker: Coupling Bootstrap Stability Selection with Leakage-Safe Nested Cross-Validation for Scientific Machine Learning}, 
+      title={RobustModelMaker: Coupling Bootstrap Stability Selection with Leakage-Safe Nested Cross-Validation for Scientific Machine Learning},
       author={Amanda S Barnard},
       year={2026},
       eprint={2606.01566},
       archivePrefix={arXiv},
       primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2606.01566}, 
+      url={https://arxiv.org/abs/2606.01566},
 }
 ```
 

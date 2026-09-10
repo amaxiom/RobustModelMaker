@@ -128,9 +128,9 @@ ROBUST_PARAMS: Dict[str, Any] = dict(
 # split, random_state=42.
 #
 # Priority (lowest → highest):
-#   ROBUST_PARAMS['stability_threshold']  — global fallback
-#   THRESHOLD_OVERRIDES[ds.name]          — per-dataset optimum (this dict)
-#   ds.robust_params_override             — explicit per-instance caller override
+#   ROBUST_PARAMS['stability_threshold'] : global fallback
+#   THRESHOLD_OVERRIDES[ds.name]         : per-dataset optimum (this dict)
+#   ds.robust_params_override            : explicit per-instance caller override
 #
 # Set any value to None to fall back to ROBUST_PARAMS['stability_threshold'].
 # Override in the notebook without re-importing:
@@ -1059,7 +1059,7 @@ def run_boruta_nested_cv(
         max_depth=7 gives each tree enough capacity to capture second- and
         third-order interactions while preventing the extreme importance variance
         seen with uncapped trees in the 590-feature SECOM space (where pilot runs
-        with max_depth=None selected 20–30% more features and showed high fold-to-
+        with max_depth=None selected 20-30% more features and showed high fold-to-
         fold variability, suggesting overfitting of importance estimates).
 
     perc=100

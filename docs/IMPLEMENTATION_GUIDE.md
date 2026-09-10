@@ -41,8 +41,8 @@ Input X, y
     |     - Stability selection: bootstrap n_bootstrap times,
     |       record which features are selected above threshold
     |     - Inner CV: RandomizedSearchCV on selected features only
-    |     - Score on outer-fold test set (no preprocessing of test fold
-    |       from training information)
+    |     - Score on outer-fold test set (transformed with the
+    |       training-fitted preprocessor; nothing is fitted on the test fold)
     |
     v
 [3] Final stability selection on all training data
@@ -68,7 +68,7 @@ ROBUST validates inputs before running anything. Errors are raised immediately a
 - Infinite values in `X` raise an error (NaNs are allowed; infinities are not).
 - All-missing feature columns raise an error.
 - Duplicate feature names raise an error.
-- For classification: each class must appear in at least `min(outer_cv, inner_cv)` samples.
+- For classification: each class must appear in at least `max(2, min(outer_cv, inner_cv))` samples. This check is skipped entirely when `groups` is supplied.
 - Group labels must have the same length as `y` and contain at least 2 distinct groups.
 
 ### Preprocessing pipeline
@@ -79,6 +79,13 @@ Preprocessing is a two-step sklearn `Pipeline`:
 2. **Standard scaling** (`StandardScaler()`): applied only when `preprocess="standard"` or `preprocess="auto"` with `alg="eln"`. Tree methods (rf, xgb) do not require scaling.
 
 The preprocessor is fitted independently inside each outer CV fold on the training partition. The final preprocessor is refitted on all training data after CV is complete. This means that imputation values and scaling statistics are different across folds and across the final model fit, all determined only from the data available at that stage.
+
+**One exception worth knowing.** `stability_selection()` builds its own preprocessor with
+`preprocess="auto"` hardcoded, regardless of what you passed. So a run with
+`preprocess="standard"` scales the data used for model fitting and scoring, but the
+stability-selection resamples are still scaled only for `alg="eln"`. A second median
+imputation is also fitted there on data the fold preprocessor has already imputed, which
+is a no-op when no NaNs remain.
 
 ### Missingness strategy (`preserve_nans=False`)
 
@@ -97,14 +104,25 @@ Use `preserve_nans=False` when a substantial fraction of features or samples is 
 
 ### What it does
 
+Despite the parameter name, the draws are **subsamples taken without replacement**,
+not bootstrap resamples. `determine_cutoff()` is the only true bootstrap in the library
+and does draw with replacement.
+
 For each of `n_bootstrap` iterations:
-1. Draw a stratified subsample of `sample_fraction * n_samples` rows (stratified for classification, random for regression).
+1. Draw a subsample of `sample_fraction * n_samples` rows without replacement (stratified by class for classification, uniform for regression).
 2. Fit a fixed-configuration version of the chosen algorithm on the subsample (no hyperparameter search at this stage).
-3. Extract feature importances: `|coef_|` for elastic net (max over classes for multiclass), `feature_importances_` for tree methods.
+3. Extract feature importances: `|coef_|` for coefficient models (mean over classes for multiclass), `feature_importances_` for tree methods, first-layer weights for `mlp`, and permutation importance as a last resort for models exposing none of these.
 4. Mark as selected any feature with importance above the median of all importances for that bootstrap run.
 5. Accumulate selection counts.
 
-After all bootstraps, divide counts by `n_bootstrap` to get selection frequencies in [0, 1]. Features with frequency >= `stability_threshold` are included in the final feature set.
+After all resamples, divide counts by `n_bootstrap` to get selection frequencies in [0, 1]. Features with frequency >= `stability_threshold` are included in the final feature set.
+
+**Fallback when nothing clears the threshold.** If no feature reaches
+`stability_threshold`, `stability_selection()` returns the top `min(3, n_features)`
+features by frequency rather than an empty set. A raised threshold therefore never
+produces a model with zero features; it silently degrades to the three most stable ones.
+Check `selection_frequencies.max()` against your threshold if you need to know whether
+the fallback fired.
 
 ### Fixed algorithm configurations for stability selection
 
@@ -131,7 +149,7 @@ Stability selection runs inside each outer fold, on the preprocessed training da
 
 | `n_bootstrap` | `stability_threshold` | Effect |
 |---|---|---|
-| 15 (fast/benchmark default) | 0.5 | Coarser frequencies (multiples of 1/15); threshold at 50% means selected in 8+ runs |
+| 15 (fast exploratory) | 0.5 | Coarser frequencies (multiples of 1/15); threshold at 50% means selected in 8+ runs |
 | 50 | 0.6 | Reasonable approximation for exploratory work |
 | 100 (default) | 0.7 | Standard; selected in 70+ out of 100 bootstrap samples |
 | 200 | 0.7 | Smoother frequencies; useful when n_features is large |
@@ -220,7 +238,7 @@ For `task_type="binary"`, ROBUST determines a probability cutoff by bootstrappin
 2. For each of `cutoff_n_bootstrap` bootstrap resamples of the control scores, find the `spec`-th quantile (default `spec=0.98`, meaning the 98th percentile of control scores).
 3. The final cutoff is the median of the bootstrap cutoff distribution. A 95% CI is also reported.
 
-This cutoff ensures that approximately `spec * 100`% of controls score below it (i.e. target specificity), while maximising sensitivity. The cutoff is stored in `result_.cutoff_result.cutoff_median`.
+This cutoff ensures that approximately `spec * 100`% of controls score below it (i.e. target specificity). Sensitivity is measured and reported at that cutoff, not optimised: the routine takes a quantile of the control scores only, and cases play no part in choosing it. The cutoff is stored in `result_.cutoff_result.cutoff_median`.
 
 For a different cutoff strategy, use:
 
@@ -241,8 +259,8 @@ predictions = maker.predict(X_new, cutoff=cutoff.cutoff_median)
 ROBUST is designed to be fully deterministic given the same `random_state`:
 
 - All random operations use explicit seeds derived from `random_state` via offsets (e.g. `random_state + fold_idx`, `random_state + 10000 + bootstrap_idx`).
-- `set_global_seed()` sets `numpy.random.seed` and `PYTHONHASHSEED`.
-- Each bootstrap run uses `random_state + 10000 + b` so bootstrap sequences are independent of fold sequences.
+- `set_global_seed()` sets `numpy.random.seed`, and sets `PYTHONHASHSEED` only if it is not already present in the environment. Because the interpreter reads that variable at start-up, setting it here has no effect on the running process; it matters only for subprocesses.
+- Each resample uses `random_state + 10000 + b`. Inside nested CV the `random_state` passed down is the fold seed, and consecutive folds differ by 1, so neighbouring folds draw overlapping seed streams. This does not affect determinism, but the streams are not independent between folds.
 - `RandomizedSearchCV` receives `random_state=fold_seed`, not a global RNG state.
 
 The reproducibility test suite (`tests/reproducibility_test_suite.py`) verifies this with 30 tests covering:
@@ -269,11 +287,13 @@ fits = outer_cv * repeated_outer_cv * (n_bootstrap + n_iter * inner_cv + 1)
      + 1  (final model)
 ```
 
-For the benchmark defaults (`outer_cv=5, inner_cv=2, n_bootstrap=15, n_iter=8, repeated_outer_cv=1`):
+For a fast exploratory configuration (`outer_cv=5, inner_cv=2, n_bootstrap=15, n_iter=8, repeated_outer_cv=1`):
 
 ```
 5 * (15 + 8*2 + 1) + 15 + 8*2 + 1 = 5 * 32 + 32 = 192 fits
 ```
+
+The benchmark suite does not use these values. It runs at `outer_cv=10, inner_cv=10, n_bootstrap=100, n_iter=100`, which is the production configuration below.
 
 For production defaults (`outer_cv=10, inner_cv=10, n_bootstrap=100, n_iter=100`):
 
@@ -318,7 +338,7 @@ FAST_KWARGS = dict(
 maker = RobustModelMaker(alg="eln", task_type="binary", **FAST_KWARGS)
 ```
 
-The performance test suite (`tests/performance_test_suite.py`) uses a similar configuration and verifies that binary/multiclass/regression runs complete within a per-sample budget of 0.08 seconds (plus a fixed overhead), enforced on 120-sample synthetic datasets.
+The performance test suite (`tests/performance_test_suite.py`) uses `outer_cv=3, inner_cv=2, n_iter=2, n_bootstrap=4, stability_threshold=0.10, cutoff_n_bootstrap=12, random_state=123` on synthetic datasets of 90 to 96 samples. Its guards are flat upper bounds, not per-sample budgets: `ROBUST_PERF_BUDGET_SECONDS` (default 90) and `ROBUST_PERF_MEMORY_MB` (default 750). They exist to catch accidental exponential blow-ups rather than to make performance claims, and the assertions fire only when `ROBUST_PERF_STRICT=1`. Set `RUN_PERFORMANCE=1` to additionally enable the scaling and repeated-run benchmarks, which are skipped by default.
 
 **Trade-offs when reducing parameters:**
 
@@ -375,15 +395,15 @@ maker = RobustModelMaker(
 - Classification: `C ~ LogUniform(1e-4, 1e2)`, `l1_ratio ~ Uniform(0, 1)`
 - Regression: `alpha ~ LogUniform(1e-4, 1e2)`, `l1_ratio ~ Uniform(0, 1)`
 
-**Preprocessing:** always scale (standard normalisation). Required because regularisation strength is not scale-invariant.
+**Preprocessing:** scaled under `preprocess="auto"` (the default) and `preprocess="standard"`. `eln` is the only algorithm that `"auto"` scales. Setting `preprocess="none"` disables scaling even for `eln`, which is not recommended because regularisation strength is not scale-invariant.
 
-**Feature importance:** `|coef_|` for binary; `max(|coef_|, axis=0)` across classes for multiclass.
+**Feature importance:** `|coef_|` for binary; `mean(|coef_|, axis=0)` across classes for multiclass.
 
 ### Ridge (`rdg`)
 
 **Stability selection:** `LogisticRegression(penalty="l2", C=1.0)` for classification; `Ridge(alpha=1.0)` for regression. Uses `|coef_|` for importance ranking.
 
-**Nested CV search space:** `C ~ LogUniform(1e-4, 1e2)` (classification) or `alpha ~ LogUniform(1e-4, 1e2)` (regression).
+**Nested CV search space:** `C ~ LogUniform(1e-3, 1e2)` (classification) or `alpha ~ LogUniform(1e-4, 1e2)` (regression).
 
 **Preprocessing:** L2 penalty is not scale-invariant; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `rdg`; use `preprocess="standard"` to enable it.
 
@@ -395,7 +415,7 @@ maker = RobustModelMaker(
 
 **Preprocessing:** L1 penalty is not scale-invariant; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `las`; use `preprocess="standard"` to enable it.
 
-### Logistic regression (`log`) — classification only
+### Logistic regression (`log`), classification only
 
 **Stability selection:** `LogisticRegression(penalty="l2", solver="lbfgs", max_iter=5000, C=1.0, class_weight="balanced")`. Raises an error if used with `task_type="regression"`.
 
@@ -407,7 +427,7 @@ maker = RobustModelMaker(
 
 **Stability selection:** `SVC(kernel="linear", probability=True, C=1.0, class_weight="balanced")` for classification; `LinearSVR(C=1.0, max_iter=5000)` for regression. Uses `|coef_|` for importance.
 
-**Nested CV search space:** `C ~ LogUniform(1e-3, 1e2)`.
+**Nested CV search space:** `C ~ LogUniform(1e-3, 1e2)` for classification; `C ~ LogUniform(1e-3, 1e2)` and `epsilon ~ LogUniform(1e-3, 1)` for regression.
 
 **Preprocessing:** SVM margin is distance-based and requires comparable feature magnitudes; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `svm`; use `preprocess="standard"` to enable it.
 
@@ -415,7 +435,7 @@ maker = RobustModelMaker(
 
 **Stability selection:** `n_estimators=80, max_depth=10` with `class_weight="balanced_subsample"` for classification. Uses `feature_importances_` (mean decrease in impurity).
 
-**Nested CV search space:** `n_estimators ~ Randint(100, 500)`, `max_depth ~ Randint(2, 20)`, `min_samples_split`, `min_samples_leaf`, `max_features`.
+**Nested CV search space:** `n_estimators ~ Randint(20, 100)`, `max_depth ~ Randint(2, 12)`, `min_samples_split ~ Randint(2, 12)`, `min_samples_leaf ~ Randint(1, 6)`, `max_features` in `{"sqrt", "log2", None}`.
 
 **Preprocessing:** median imputation only (no scaling needed for trees).
 
@@ -423,7 +443,7 @@ maker = RobustModelMaker(
 
 **Stability selection:** `n_estimators=80, max_depth=6, learning_rate=0.05`. Uses `feature_importances_` (weight-based gain).
 
-**Nested CV search space:** `n_estimators`, `max_depth`, `learning_rate ~ LogUniform(0.01, 0.3)`, `subsample`, `colsample_bytree`, `reg_alpha`, `reg_lambda`.
+**Nested CV search space:** `n_estimators ~ Randint(20, 100)`, `max_depth ~ Randint(2, 8)`, `learning_rate ~ LogUniform(0.01, 0.3)`, `subsample ~ Uniform(0.6, 1.0)`, `colsample_bytree ~ Uniform(0.6, 1.0)`. `reg_alpha` and `reg_lambda` are left at their XGBoost defaults and are not searched.
 
 **Preprocessing:** median imputation only.
 
@@ -435,7 +455,7 @@ maker = RobustModelMaker(
 
 **Preprocessing:** neural networks are sensitive to feature magnitude; scaling is strongly recommended. With the default `preprocess="auto"`, no scaling is applied for `mlp`; use `preprocess="standard"` to enable it.
 
-### Ordinary least squares (`lin`) — regression only
+### Ordinary least squares (`lin`), regression only
 
 **Stability selection:** `LinearRegression()`. Raises an error if used with classification task types. Uses `|coef_|` for importance.
 
@@ -449,14 +469,15 @@ maker = RobustModelMaker(
 
 ROBUST addresses class imbalance at two levels:
 
-1. **Stratified splitting:** `StratifiedKFold` is used for all classification tasks, ensuring class proportions are preserved in each fold.
+1. **Stratified splitting:** `StratifiedKFold` is used for classification tasks, ensuring class proportions are preserved in each fold. When `groups` is supplied, `GroupKFold` is used instead for every task type, and class proportions are then not controlled.
 
 2. **Algorithm-level balancing:**
-   - Elastic net (`eln`), Ridge (`rdg`), Lasso (`las`), Logistic (`log`), SVM (`svm`), MLP (`mlp`): `class_weight` is not set by default. For severe imbalance these models rely on stratification and the AUC metric.
+   - Ridge (`rdg`), Lasso (`las`), Logistic (`log`) and SVM (`svm`) classification all set `class_weight="balanced"`.
+   - Elastic net (`eln`) and MLP (`mlp`) do not set `class_weight`. For severe imbalance these two rely on stratification and the AUC metric.
    - Random forest (`rf`): `class_weight="balanced_subsample"` is always set, which weights samples inversely proportional to class frequency within each bootstrap sample of the tree.
    - XGBoost (`xgb`): no automatic weighting, but the hyperparameter search covers `reg_alpha` and `reg_lambda` which help regularise minority-class patterns.
 
-3. **Stability subsampling:** `_stratified_or_random_subsample()` draws stratified subsamples for classification, preserving class proportions in each bootstrap run.
+3. **Stability subsampling:** `stability_selection()` draws class-stratified subsamples for classification, preserving class proportions in each resample, and uniform subsamples for regression.
 
 For extreme imbalance (< 5% minority class, as in the SECOM benchmark with ~7% failure rate), the benchmark results show that the combination of stratified splitting and `class_weight="balanced_subsample"` is sufficient for AUC-based evaluation. If recall or F1 on the minority class is the target metric, consider post-hoc threshold selection using `determine_cutoff()` with a lower `target_specificity`.
 
@@ -535,7 +556,7 @@ print(f"Selected: {selected}")
 
 ### Custom scoring metric
 
-The scoring metric is determined by `_default_scoring(task_type)`. To use a different metric, pass the sklearn scorer string as a `scoring` argument to the underlying `nested_cross_validation` call or override `_default_scoring` directly. For `permutation_importance`, pass `scoring=` explicitly:
+The scoring metric is determined by `_default_scoring(task_type)` and is not configurable through the public API: neither `run_pipeline()` nor `nested_cross_validation()` accepts a `scoring` argument. To change it, override `_default_scoring` on the module before fitting. For `permutation_importance`, which does take the argument, pass `scoring=` explicitly:
 
 ```python
 pi = maker.permutation_importance(X_val, y_val,

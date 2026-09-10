@@ -362,37 +362,6 @@ class PipelineResult:
         }
         return VerificationResult(self.task_type, metrics, pred_encoded, probabilities=proba, confusion=cm)
 
-    def permutation_importance(
-        self,
-        X: Union[np.ndarray, pd.DataFrame],
-        y: Union[np.ndarray, pd.Series, List[Any]],
-        n_repeats: int = 20,
-        scoring: Optional[str] = None,
-        random_state: Optional[int] = 42,
-        n_jobs: int = -1,
-    ) -> PermutationImportanceResult:
-        """Compute permutation importance on processed selected features."""
-        X_sel, _ = self._prepare_X_selected(X)
-        y_encoded = _prepare_y(y, self.task_type, label_mapping=self.label_mapping)
-        if scoring is None:
-            scoring = _default_scoring(self.task_type)
-        imp = sklearn_permutation_importance(
-            self.robust_model,
-            X_sel,
-            y_encoded,
-            n_repeats=n_repeats,
-            random_state=random_state,
-            scoring=scoring,
-            n_jobs=n_jobs,
-        )
-        return PermutationImportanceResult(
-            importances_mean=imp.importances_mean,
-            importances_std=imp.importances_std,
-            importances=imp.importances,
-            feature_names=self.selected_features,
-            scoring=scoring,
-        )
-
     def export_shap_ready(self, X: Union[np.ndarray, pd.DataFrame], y: Optional[Union[np.ndarray, pd.Series, List[Any]]] = None) -> Dict[str, Any]:
         """Return model and processed selected matrix suitable for SHAP explainers."""
         X_sel, index = self._prepare_X_selected(X)
@@ -627,168 +596,6 @@ def _make_inner_splitter(task_type: ResolvedTask, n_splits: int, random_state: O
     if task_type in {"binary", "multiclass"}:
         return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     return KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-
-
-def _stratified_or_random_subsample(y: np.ndarray, task_type: ResolvedTask, n_samples: int, rng: np.random.RandomState) -> np.ndarray:
-    if task_type == "regression":
-        idx = rng.choice(np.arange(len(y)), size=min(n_samples, len(y)), replace=False)
-        rng.shuffle(idx)
-        return idx
-    classes, counts = np.unique(y.astype(int), return_counts=True)
-    proportions = counts / len(y)
-    indices: List[int] = []
-    for cls, prop in zip(classes, proportions):
-        cls_indices = np.where(y == cls)[0]
-        n_cls = max(1, int(round(n_samples * prop)))
-        n_cls = min(n_cls, len(cls_indices))
-        indices.extend(rng.choice(cls_indices, size=n_cls, replace=False).tolist())
-    out = np.array(indices, dtype=int)
-    rng.shuffle(out)
-    return out
-
-
-def get_algorithm_config(
-    alg: Algorithm,
-    task_type: ResolvedTask = "binary",
-    random_state: Optional[int] = 42,
-    n_jobs: int = -1,
-    n_classes: Optional[int] = None,
-) -> Tuple[BaseEstimator, Dict[str, Any]]:
-    """Get estimator and RandomizedSearchCV parameter distributions."""
-    if alg == "eln":
-        if task_type == "regression":
-            model = ElasticNet(random_state=random_state, max_iter=10000)
-            return model, {"alpha": loguniform(1e-4, 1e2), "l1_ratio": uniform(0, 1)}
-        model = LogisticRegression(
-            penalty="elasticnet",
-            solver="saga",
-            max_iter=5000,
-            random_state=random_state,
-            n_jobs=1,
-        )
-        return model, {"C": loguniform(1e-4, 1e2), "l1_ratio": uniform(0, 1)}
-
-    if alg == "rf":
-        if task_type == "regression":
-            model = RandomForestRegressor(random_state=random_state, n_jobs=n_jobs)
-            param = {
-                "n_estimators": randint(100, 500),
-                "max_depth": randint(2, 20),
-                "min_samples_split": randint(2, 20),
-                "min_samples_leaf": randint(1, 10),
-                "max_features": ["sqrt", "log2", None],
-            }
-            return model, param
-        model = RandomForestClassifier(random_state=random_state, n_jobs=n_jobs, class_weight="balanced_subsample")
-        param = {
-            "n_estimators": randint(100, 500),
-            "max_depth": randint(2, 20),
-            "min_samples_split": randint(2, 20),
-            "min_samples_leaf": randint(1, 10),
-            "max_features": ["sqrt", "log2", None],
-        }
-        return model, param
-
-    if alg == "xgb":
-        if not _HAS_XGBOOST:
-            raise ImportError("xgboost is not installed. Install xgboost or use alg='eln' or alg='rf'.")
-        common = {
-            "n_estimators": randint(100, 500),
-            "max_depth": randint(2, 10),
-            "learning_rate": loguniform(1e-2, 3e-1),
-            "subsample": uniform(0.6, 0.4),
-            "colsample_bytree": uniform(0.6, 0.4),
-            "reg_alpha": loguniform(1e-4, 1),
-            "reg_lambda": loguniform(1e-3, 10),
-        }
-        if task_type == "regression":
-            return XGBRegressor(random_state=random_state, n_jobs=n_jobs, tree_method="hist", objective="reg:squarederror"), common
-        objective = "binary:logistic" if task_type == "binary" else "multi:softprob"
-        model = XGBClassifier(
-            random_state=random_state,
-            n_jobs=n_jobs,
-            eval_metric="auc" if task_type == "binary" else "mlogloss",
-            tree_method="hist",
-            objective=objective,
-            num_class=n_classes if task_type == "multiclass" else None,
-        )
-        return model, common
-    raise ValueError("alg must be one of 'eln', 'rf', or 'xgb'.")
-
-
-def stability_selection(
-    X: Union[np.ndarray, pd.DataFrame],
-    y: Union[np.ndarray, pd.Series, List[Any]],
-    feature_names: Optional[np.ndarray] = None,
-    alg: Algorithm = "xgb",
-    task_type: TaskType = "auto",
-    n_bootstrap: int = 100,
-    sample_fraction: float = 0.7,
-    threshold: float = 0.7,
-    random_state: Optional[int] = 42,
-    n_jobs: int = -1,
-) -> StabilitySelectionResult:
-    """Bootstrap stability selection on already preprocessed numeric data."""
-    set_global_seed(random_state)
-    names = _extract_feature_names(X, feature_names)
-    X_arr = _to_numpy_X(X)
-    resolved = _resolve_task_type(y, task_type)
-    mapping, _, _ = _make_label_mapping(y, resolved)
-    y_arr = _prepare_y(y, resolved, mapping)
-    if not (0 < sample_fraction <= 1):
-        raise ValueError("sample_fraction must be in (0, 1].")
-    if not (0 < threshold <= 1):
-        raise ValueError("threshold must be in (0, 1].")
-    if n_bootstrap < 1:
-        raise ValueError("n_bootstrap must be >= 1.")
-    rng = np.random.RandomState(random_state)
-    n_samples, n_features = X_arr.shape
-    subsample_size = max(2, int(round(n_samples * sample_fraction)))
-    selection_counts = np.zeros(n_features, dtype=float)
-
-    for b in range(n_bootstrap):
-        seed_b = None if random_state is None else int(random_state + 10000 + b)
-        idx = _stratified_or_random_subsample(y_arr, resolved, subsample_size, rng)
-        X_sub, y_sub = X_arr[idx], y_arr[idx]
-        model, _ = get_algorithm_config(alg, resolved, random_state=seed_b, n_jobs=n_jobs, n_classes=len(np.unique(y_arr)) if resolved != "regression" else None)
-        if alg == "eln":
-            if resolved == "regression":
-                model.set_params(alpha=0.01, l1_ratio=0.7)
-            else:
-                model.set_params(C=1.0, l1_ratio=0.7)
-        elif alg == "rf":
-            model.set_params(n_estimators=80, max_depth=10)
-        elif alg == "xgb":
-            model.set_params(n_estimators=80, max_depth=6, learning_rate=0.05)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            model.fit(X_sub, y_sub)
-        if hasattr(model, "coef_"):
-            coef = np.asarray(model.coef_)
-            if coef.ndim == 1:
-                importance = np.abs(coef)
-            else:
-                importance = np.max(np.abs(coef), axis=0)
-        elif hasattr(model, "feature_importances_"):
-            importance = np.asarray(model.feature_importances_)
-        else:
-            raise RuntimeError("Model does not expose coefficients or feature_importances_.")
-        selected = importance > np.median(importance)
-        if not np.any(selected):
-            selected[np.argmax(importance)] = True
-        selection_counts += selected.astype(float)
-
-    freqs = selection_counts / float(n_bootstrap)
-    selected_mask = freqs >= threshold
-    return StabilitySelectionResult(
-        feature_names=names,
-        selection_frequencies=freqs,
-        selected_features=names[selected_mask],
-        selected_indices=np.where(selected_mask)[0],
-        threshold=threshold,
-        n_bootstrap=n_bootstrap,
-        task_type=resolved,
-    )
 
 
 def _fit_calibrated_if_needed(
@@ -1217,63 +1024,6 @@ def run_pipeline(
 class RobustModelMaker:
     """Estimator-style interface for RobustModelMaker v0.3."""
 
-    def __init__(
-        self,
-        alg: Algorithm = "eln",
-        task_type: TaskType = "auto",
-        spec: float = 0.98,
-        outer_cv: int = 10,
-        inner_cv: int = 10,
-        repeated_outer_cv: int = 1,
-        n_iter: int = 100,
-        stability_threshold: float = 0.7,
-        n_bootstrap: int = 100,
-        cutoff_n_bootstrap: int = 1000,
-        random_state: Optional[int] = 42,
-        preprocess: PreprocessMode = "auto",
-        calibration: CalibrationMode = "none",
-        n_jobs: int = -1,
-        verbose: bool = True,
-    ) -> None:
-        self.alg = alg
-        self.task_type = task_type
-        self.spec = spec
-        self.outer_cv = outer_cv
-        self.inner_cv = inner_cv
-        self.repeated_outer_cv = repeated_outer_cv
-        self.n_iter = n_iter
-        self.stability_threshold = stability_threshold
-        self.n_bootstrap = n_bootstrap
-        self.cutoff_n_bootstrap = cutoff_n_bootstrap
-        self.random_state = random_state
-        self.preprocess = preprocess
-        self.calibration = calibration
-        self.n_jobs = n_jobs
-        self.verbose = verbose
-        self.result_: Optional[PipelineResult] = None
-
-    def fit(
-        self,
-        X: Union[np.ndarray, pd.DataFrame],
-        y: Union[np.ndarray, pd.Series, List[Any]],
-        feature_names: Optional[np.ndarray] = None,
-        groups: Optional[Union[np.ndarray, pd.Series, List[Any]]] = None,
-        X_validation: Optional[Union[np.ndarray, pd.DataFrame]] = None,
-        y_validation: Optional[Union[np.ndarray, pd.Series, List[Any]]] = None,
-    ) -> "RobustModelMaker":
-        self.result_ = run_pipeline(
-            X=X, y=y, feature_names=feature_names, alg=self.alg,
-            task_type=self.task_type, spec=self.spec, outer_cv=self.outer_cv,
-            inner_cv=self.inner_cv, repeated_outer_cv=self.repeated_outer_cv,
-            n_iter=self.n_iter, stability_threshold=self.stability_threshold,
-            n_bootstrap=self.n_bootstrap, cutoff_n_bootstrap=self.cutoff_n_bootstrap,
-            random_state=self.random_state, preprocess=self.preprocess,
-            calibration=self.calibration, groups=groups,
-            X_validation=X_validation, y_validation=y_validation,
-            n_jobs=self.n_jobs, verbose=self.verbose,
-        )
-        return self
-
     def _check_fitted(self) -> PipelineResult:
         if self.result_ is None:
             raise NotFittedError("Call fit(X, y) before prediction or evaluation.")
@@ -1288,9 +1038,6 @@ class RobustModelMaker:
     def evaluate_verification(self, X: Union[np.ndarray, pd.DataFrame], y: Union[np.ndarray, pd.Series, List[Any]], cutoff: Optional[float] = None) -> VerificationResult:
         return self._check_fitted().evaluate_verification(X, y, cutoff=cutoff)
 
-    def permutation_importance(self, X: Union[np.ndarray, pd.DataFrame], y: Union[np.ndarray, pd.Series, List[Any]], **kwargs) -> PermutationImportanceResult:
-        return self._check_fitted().permutation_importance(X, y, **kwargs)
-
     def export_shap_ready(self, X: Union[np.ndarray, pd.DataFrame], y: Optional[Union[np.ndarray, pd.Series, List[Any]]] = None) -> Dict[str, Any]:
         return self._check_fitted().export_shap_ready(X, y)
 
@@ -1300,15 +1047,6 @@ class RobustModelMaker:
     def summary(self) -> str:
         return self._check_fitted().summary()
 
-
-def print_pipeline_results(result: PipelineResult) -> None:
-    """Compact console summary."""
-    print(result.summary())
-    print("\nFeature stability:")
-    print(result.stability_result.summary().head(20).to_string(index=False))
-    if result.validation_result is not None:
-        print("\nExternal validation:")
-        print(result.validation_result.summary().to_string(index=False))
 
 # -----------------------------------------------------------------------------
 # v0.3 compatibility and reporting/performance patches
@@ -1618,7 +1356,10 @@ def get_algorithm_config(alg: str, task_type: ResolvedTask = "binary", random_st
         return LogisticRegression(penalty="l1", solver="saga", max_iter=5000, random_state=random_state, class_weight="balanced"), {"C": loguniform(1e-3, 1e2)}
 
     if alg == "log":
-        if task_type == "regression":
+        # Unreachable: the alg/task guard at the top of this function already
+        # rejects log with regression.  Kept as a local invariant in case that
+        # guard is ever moved or relaxed.
+        if task_type == "regression":  # pragma: no cover
             raise ValueError("alg='log' is only valid for classification.")
         return LogisticRegression(penalty="l2", solver="lbfgs", max_iter=5000, random_state=random_state, class_weight="balanced"), {"C": loguniform(1e-3, 1e2)}
 

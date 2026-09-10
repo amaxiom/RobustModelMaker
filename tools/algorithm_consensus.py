@@ -13,7 +13,7 @@ bias.  A Random Forest latches onto non-linear interactions via MDI importance;
 ElasticNet finds linear additive effects via |coefficient| magnitude; Lasso
 aggressively zeroes out weak linear predictors.  A feature that survives *all*
 of these fundamentally different selection criteria is extremely unlikely to be
-an artefact of any one model family's assumptions — it is the closest thing to
+an artefact of any one model family's assumptions, and it is the closest thing to
 algorithm-agnostic signal the data contains.
 
 Output
@@ -21,12 +21,12 @@ Output
 The central result is a **feature table** with one row per feature selected by
 at least one algorithm:
 
-  feature         — feature name
-  n_selected_by   — how many algorithms chose it
-  coverage        — n_selected_by / n_algorithms  (0.0 – 1.0)
-  mean_freq       — mean bootstrap selection frequency across selecting algorithms
-  freq_{alg}      — per-algorithm bootstrap selection frequency (NaN = not selected)
-  in_consensus    — True when coverage >= min_agreement
+  feature        : feature name
+  n_selected_by  : how many algorithms chose it
+  coverage       : n_selected_by / n_algorithms  (0.0 to 1.0)
+  mean_freq      : mean bootstrap selection frequency across selecting algorithms
+  freq_{alg}     : per-algorithm bootstrap selection frequency (NaN = not selected)
+  in_consensus   : True when coverage >= min_agreement
 
 Features in the consensus set appear at the top, sorted by coverage then
 mean_freq.  The full table also drives the heatmap visualisation.
@@ -321,14 +321,14 @@ class AlgorithmConsensus:
 
     Each algorithm is run as a complete RobustModelMaker nested-CV fit with
     identical structural parameters (outer/inner CV, bootstrap count, threshold).
-    The only thing that changes is the underlying model family — and therefore
+    The only thing that changes is the underlying model family, and therefore
     the feature importance criterion used during bootstrap stability selection:
 
-    * ``"rf"``  — Random Forest MDI (captures non-linear interactions)
-    * ``"eln"`` — ElasticNet |coefficient| (linear, L1+L2, handles collinearity)
-    * ``"rdg"`` — Ridge |coefficient| (linear, L2, soft shrinkage)
-    * ``"las"`` — Lasso |coefficient| (linear, L1, aggressive sparsity)
-    * ``"xgb"`` — XGBoost gain (boosted trees; requires ``pip install xgboost``)
+    * ``"rf"`` : Random Forest MDI (captures non-linear interactions)
+    * ``"eln"``: ElasticNet |coefficient| (linear, L1+L2, handles collinearity)
+    * ``"rdg"``: Ridge |coefficient| (linear, L2, soft shrinkage)
+    * ``"las"``: Lasso |coefficient| (linear, L1, aggressive sparsity)
+    * ``"xgb"``: XGBoost gain (boosted trees; requires ``pip install xgboost``)
 
     Features surviving across all these criteria are the most robust available.
 
@@ -340,7 +340,7 @@ class AlgorithmConsensus:
         ``["eln", "rdg", "rf"]`` for classification.
     base_params : dict, optional
         Shared RobustModelMaker kwargs.  Do **not** include ``"alg"`` or
-        ``"task_type"`` — those are set per-run.  Defaults::
+        ``"task_type"``, which are set per-run.  Defaults::
 
             outer_cv=10, inner_cv=5, n_bootstrap=25, n_iter=10,
             stability_threshold=0.75, cutoff_n_bootstrap=100,
@@ -414,7 +414,7 @@ class AlgorithmConsensus:
         Construct from any object with ``.X_train``, ``.y_train``, ``.task_type``.
 
         ``robust_params_override`` (if present) is merged into ``base_params``,
-        then ``"alg"`` and ``"task_type"`` keys are stripped — both are managed
+        then ``"alg"`` and ``"task_type"`` keys are stripped, because both are managed
         per-run by :meth:`fit`.
         """
         bp = {**DEFAULT_BASE_PARAMS, **(base_params or {})}
@@ -508,7 +508,7 @@ class AlgorithmConsensus:
             _suffix  = f" … and {_extra} more" if _extra > 0 else ""
             warnings.warn(
                 f"AlgorithmConsensus: dropped {len(_dropped_cols)} column(s) with "
-                f"fewer than {_min_nonnan} non-NaN values in the training set — "
+                f"fewer than {_min_nonnan} non-NaN values in the training set, "
                 f"these would cause all-NaN bootstrap draws or shape mismatches "
                 f"inside RobustModelMaker: {_dropped_cols}",
                 UserWarning, stacklevel=2,
@@ -529,7 +529,7 @@ class AlgorithmConsensus:
         min_count = int(np.ceil(self.min_agreement * n))
 
         if self.verbose:
-            _hdr(f"AlgorithmConsensus  —  {n} algorithm(s), "
+            _hdr(f"AlgorithmConsensus  |  {n} algorithm(s), "
                  f"min_agreement={self.min_agreement:.0%}")
             _kv("Algorithms",    "  |  ".join(
                 f"{a} ({ALGORITHM_LABELS.get(a, a)})" for a in algs))
@@ -698,7 +698,7 @@ def _kv(key: str, value: str, kw: int = 28) -> None:
 
 def _print_report(res: ConsensusResult) -> None:
     print()
-    _hdr(f"AlgorithmConsensus Report  —  {res.task_type}")
+    _hdr(f"AlgorithmConsensus Report  |  {res.task_type}")
     _kv("Algorithms run",      str(res.algorithms))
     _kv("Total elapsed",       f"{res.total_elapsed:.0f}s")
     _kv("min_agreement",       f"{res.min_agreement:.2f}  "
@@ -755,7 +755,7 @@ def _print_report(res: ConsensusResult) -> None:
 
         for _, row in consensus_df.iterrows():
             freq_str = "  ".join(
-                f"{row[c]:>7.3f}" if np.isfinite(row[c]) else f"{'—':>7}"
+                f"{row[c]:>7.3f}" if np.isfinite(row[c]) else f"{'-':>7}"
                 for c in freq_cols
             )
             print(f"  {str(row['feature']):<24}  {row['coverage']:>8.2f}  "
@@ -769,7 +769,7 @@ def _print_report(res: ConsensusResult) -> None:
     print("  INTERPRETATION")
     print("  " + "═" * 56)
     print(f"    {n_con} feature(s) selected by all {res.n_algorithms} algorithms.")
-    print(f"    These are the most algorithmically-robust signals in the data —")
+    print(f"    These are the most algorithmically-robust signals in the data,")
     print(f"    features whose importance survives across fundamentally different")
     print(f"    model families and importance criteria.")
     if n_con == 0:
@@ -795,7 +795,7 @@ def _plot_heatmap(
         import matplotlib.colors as mcolors
         import matplotlib.patches as mpatches
     except ImportError:
-        warnings.warn("matplotlib not installed — install with: pip install matplotlib",
+        warnings.warn("matplotlib not installed. Install with: pip install matplotlib",
                       RuntimeWarning, stacklevel=2)
         return None
 
@@ -833,7 +833,7 @@ def _plot_heatmap(
     n_con = int(res.feature_table["in_consensus"].sum())
     title_suffix = f"  (top {len(ft_plot)} of {len(ft)} selected)" if len(ft) > max_features else ""
     ax.set_title(
-        f"Algorithm Consensus — selection frequency heatmap{title_suffix}\n"
+        f"Algorithm Consensus: selection frequency heatmap{title_suffix}\n"
         f"min_agreement={res.min_agreement:.0%}  |  "
         f"{n_con} consensus features  |  "
         f"{res.n_algorithms} algorithms  |  "

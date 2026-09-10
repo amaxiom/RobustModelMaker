@@ -123,8 +123,9 @@ Similarly, a feature not selected by ROBUST is not necessarily irrelevant: it ma
 ### Visualising stability
 
 ```python
-ax = result.stability_result.plot_feature_stability(top_n=30)
-# Horizontal bar chart; vertical dashed line marks the threshold
+ax = result.plot_feature_stability(top_n=30)   # or maker.plot_feature_stability(top_n=30)
+# Horizontal bar chart; vertical dashed line marks the threshold.
+# Requires matplotlib. Returns a matplotlib Axes.
 ```
 
 ### Feature stability across folds
@@ -134,11 +135,12 @@ The per-fold stability table shows whether the same features are selected across
 ```python
 fs = result.nested_cv_result.feature_stability
 # Columns: feature, mean_frequency, std_frequency, selected_in_n_folds
-print(fs[fs["selected_in_n_folds"] == maker.outer_cv].head())
+n_folds_total = maker.outer_cv * maker.repeated_outer_cv
+print(fs[fs["selected_in_n_folds"] == n_folds_total].head())
 # Features selected in every outer fold
 ```
 
-A feature with `selected_in_n_folds == outer_cv` was considered stable in every fold. A feature with `selected_in_n_folds == 1` was selected in only one fold; this may be a fold-specific artefact.
+The table accumulates one row per fold per repeat, so the maximum is `outer_cv * repeated_outer_cv`. A feature reaching that count was considered stable in every fold. A feature with `selected_in_n_folds == 1` was selected in only one fold; this may be a fold-specific artefact. Note that under grouped CV `outer_cv` may have been reduced to the number of available groups, in which case use the reduced value.
 
 ---
 
@@ -163,9 +165,14 @@ If some features appear in `selected_features` but rarely in `nested_cv_result.f
 model = result.robust_model   # fitted sklearn estimator (operates on selected features)
 pre   = result.preprocessor   # fitted preprocessing pipeline
 
-# Coefficients (eln)
+# Coefficients (eln, rdg, las, log, svm, lin)
 if hasattr(model, "coef_"):
-    coefs = pd.Series(model.coef_.ravel(), index=result.selected_features)
+    coef = np.asarray(model.coef_)
+    if coef.ndim > 1 and coef.shape[0] > 1:
+        # Multiclass: one row per class. Summarise across classes, or pick a row.
+        coefs = pd.Series(np.abs(coef).mean(axis=0), index=result.selected_features)
+    else:
+        coefs = pd.Series(coef.ravel(), index=result.selected_features)
     print(coefs.sort_values(key=abs, ascending=False))
 ```
 
@@ -329,7 +336,7 @@ These are informative rather than decision-making:
 
 The benchmark suite uses [BenchMake](https://github.com/amaxiom/benchmake) to partition each dataset into train and test sets. BenchMake does not draw random samples. Instead it selects an archetypal split: the train and test sets are chosen to be maximally representative of the full dataset's diversity in feature space. Each partition covers the full range of the data distribution rather than overlapping randomly.
 
-This makes BenchMake splits **adversarial**: the model is trained and evaluated on portions of the space that are explicitly kept apart, which is harder than a random split where train and test are likely to be similar in distribution. The result is a **lower-bound performance estimate** — a conservative, worst-case assessment of how well the model generalises.
+This makes BenchMake splits **adversarial**: the model is trained and evaluated on portions of the space that are explicitly kept apart, which is harder than a random split where train and test are likely to be similar in distribution. The result is a **lower-bound performance estimate**: a conservative, worst-case assessment of how well the model generalises.
 
 **Why this matters for interpreting benchmark scores:**
 
@@ -376,7 +383,7 @@ The benchmark suite (`benchmarks/benchmark_suite.py`) evaluates ROBUST on three 
 
 ### Cross-scenario summary
 
-The benchmark configuration is shared across all three scenarios: `outer_cv=10`, `inner_cv=5`, `n_bootstrap=25`, `stability_threshold=0.6`, `n_iter=10`, `random_state=42`. With this configuration the most recent benchmark run (total wall-clock ~4.1 hours) produced:
+The benchmark configuration is shared across all three scenarios: `outer_cv=10`, `inner_cv=10`, `n_bootstrap=100`, `n_iter=100`, `cutoff_n_bootstrap=500`, `random_state=42`, with a base `stability_threshold` of 0.75. Per-dataset thresholds override the base value where the threshold optimiser has produced one: 0.60 for SECOM Manufacturing and 0.80 for Urban Land Cover, with Graphene Oxide Bulk on the base 0.75. With this configuration the most recent benchmark run produced:
 
 | Scenario | Task | n_train x p | ROBUST feats | Reduction | BL score | ROBUST score | delta | p-val | Outcome |
 |---|---|---|---|---|---|---|---|---|---|
@@ -407,7 +414,8 @@ When reporting ROBUST results in a scientific paper, include the following:
 ```
 Feature selection and model assessment were performed using RobustModelMaker v0.3
 (https://github.com/your_repo). Bootstrap stability selection [Meinshausen & Buhlmann, 2010]
-with n_bootstrap=100 bootstrap resamples and a selection threshold of 0.7 was used to
+with n_bootstrap=100 subsamples drawn without replacement (70% of rows each, stratified
+by class) and a selection threshold of 0.7 was used to
 identify a stable feature subset. Model performance was estimated using nested cross-validation
 (outer_cv=10, inner_cv=10) with [algorithm] and n_iter=100 hyperparameter search iterations
 per fold. All preprocessing (median imputation, standard scaling) was performed inside each
@@ -447,7 +455,7 @@ The nested CV score is an out-of-fold estimate. The final model is fit on all tr
 
 ### "A higher stability threshold always gives a better model"
 
-A higher threshold produces fewer, more consistently selected features. If the threshold is too high for your dataset size or feature signal strength, it may exclude genuinely predictive features, reducing performance. The right threshold is dataset-dependent. If `preserved` results are obtained at 0.5 and 0.7, the higher threshold is preferable for parsimony. If results are `degraded` at 0.7 but `preserved` at 0.5, the lower threshold is the working point.
+A higher threshold produces fewer, more consistently selected features. If the threshold is too high for your dataset size or feature signal strength, it may exclude genuinely predictive features, reducing performance. The right threshold is dataset-dependent. If `preserved` results are obtained at 0.5 and 0.7, the higher threshold is preferable for parsimony. If the outcome is `sig. worse *` at 0.7 but `preserved` at 0.5, the lower threshold is the working point.
 
 ### "p >= 0.05 means the methods are identical"
 

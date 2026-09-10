@@ -5,24 +5,24 @@ Multi-objective grid search over RobustModelMaker's ``stability_threshold``.
 
 The three objectives are in natural tension:
 
-  * A **higher** threshold is more conservative — only features that survive a
+  * A **higher** threshold is more conservative: only features that survive a
     large fraction of bootstrap resamples pass.  This removes more features
     (high compression, high stability) but risks excluding borderline-signal
     features (potentially lower predictive score).
 
-  * A **lower** threshold is more permissive — more features survive (lower
+  * A **lower** threshold is more permissive: more features survive (lower
     compression, potentially lower stability), and predictive score is usually
     higher because more signal is retained.
 
 This optimizer sweeps a configurable grid of threshold values, runs a full
 RobustModelMaker nested-CV fit at each point, and records three metrics:
 
-  1. **Predictive score**  — mean outer-fold AUC (classification) or neg-RMSE
+  1. **Predictive score**: mean outer-fold AUC (classification) or neg-RMSE
      (regression).  Higher is always better in both cases.
-  2. **Jaccard stability** — mean pairwise feature-set similarity across outer
+  2. **Jaccard stability**: mean pairwise feature-set similarity across outer
      folds (Nogueira et al. 2018).  1 = identical selection every fold.
-  3. **Compression ratio** — fraction of input features removed
-     (1 − mean_selected / total_features).  Higher = smaller subset.
+  3. **Compression ratio**: fraction of input features removed
+     (1 - mean_selected / total_features).  Higher = smaller subset.
 
 After collecting raw metrics the optimizer:
 
@@ -96,9 +96,10 @@ def _import_robust_module() -> Any:
     Search order:
       1. ROBUST_MODEL_MAKER_PATH env var (explicit override)
       2. Same directory as this file        (tools/)
-      3. Parent directory of this file      (RobustModelMaker/ — standard layout)
+      3. Parent directory of this file      (RobustModelMaker/, standard layout)
       4. Grandparent directory              (fallback)
-      5. Standard import via sys.path
+      5. Standard import via sys.path       (import RobustModelMaker)
+      6. PyPI package name                  (import robustmodelmaker)
     """
     _KEY = "RobustModelMaker"
     if _KEY in sys.modules:
@@ -129,11 +130,18 @@ def _import_robust_module() -> Any:
         import RobustModelMaker as _rm
         return _rm
     except ImportError:
+        pass
+
+    try:
+        import robustmodelmaker as _rm          # PyPI package name (pip install robustmodelmaker)
+        return _rm
+    except ImportError:
         raise ImportError(
-            "Cannot locate RobustModelMaker.py.\n"
-            "  Option 1 — place threshold_optimizer.py one level above RobustModelMaker.py.\n"
-            "  Option 2 — set the ROBUST_MODEL_MAKER_PATH env var to the full .py path.\n"
-            "  Option 3 — add RobustModelMaker's directory to sys.path before importing."
+            "Cannot locate RobustModelMaker.\n"
+            "  Option 1: install via pip: pip install robustmodelmaker\n"
+            "  Option 2: place threshold_optimizer.py one level above RobustModelMaker.py.\n"
+            "  Option 3: set the ROBUST_MODEL_MAKER_PATH env var to the full .py path.\n"
+            "  Option 4: add RobustModelMaker's directory to sys.path before importing."
         )
 
 
@@ -322,7 +330,7 @@ def _find_pareto_front(results: List[ThresholdResult]) -> List[ThresholdResult]:
     """Mark dominated solutions; return the Pareto-non-dominated set.
 
     All three objectives are maximised: ``mean_score``, ``stability``,
-    ``compression``.  NaN stability is treated as −∞ for dominance checks
+    ``compression``.  NaN stability is treated as -inf for dominance checks
     so that a finite-stability solution always dominates a NaN-stability one.
     """
     def _s(r: ThresholdResult) -> float:
@@ -359,11 +367,11 @@ class ThresholdOptimizer:
     RobustModelMaker fit is run on the supplied training data.  Three metrics
     are recorded per threshold:
 
-    * **Predictive score** — mean outer-fold AUC (binary/multiclass) or
+    * **Predictive score**: mean outer-fold AUC (binary/multiclass) or
       neg-RMSE (regression).  Higher is always better.
-    * **Jaccard stability** — mean pairwise feature-set similarity across outer
+    * **Jaccard stability**: mean pairwise feature-set similarity across outer
       folds.  1.0 = identical selection every fold; 0.0 = fully disjoint.
-    * **Compression ratio** — fraction of features removed (1 − selected/total).
+    * **Compression ratio**: fraction of features removed (1 - selected/total).
 
     After the sweep the optimizer normalises all three objectives to [0, 1],
     computes a configurable weighted composite score, identifies the
@@ -386,7 +394,7 @@ class ThresholdOptimizer:
 
             {"score": 1.0, "stability": 1.0, "compression": 1.0}   # default
 
-        Values are normalised internally — ``{2, 2, 2}`` ≡ ``{1, 1, 1}``.
+        Values are normalised internally, so ``{2, 2, 2}`` ≡ ``{1, 1, 1}``.
         Increase ``"score"`` to emphasise predictive accuracy,
         ``"stability"`` for fold-to-fold consistency, ``"compression"``
         for the smallest possible feature subset.
@@ -395,7 +403,7 @@ class ThresholdOptimizer:
         instantiation.  ``stability_threshold`` and ``task_type`` are
         overridden per grid point; all other keys are passed through.
 
-        Defaults (fast exploration — increase ``n_bootstrap``/``n_iter``
+        Defaults (fast exploration, increase ``n_bootstrap``/``n_iter``
         for production)::
 
             alg="rf", outer_cv=10, inner_cv=5, n_bootstrap=25, n_iter=10,
@@ -418,7 +426,7 @@ class ThresholdOptimizer:
         result.print_report()
         ROBUST_PARAMS.update(result.best_params())
 
-    Custom weights — prioritise stability::
+    Custom weights, prioritise stability::
 
         result = ThresholdOptimizer(
             X_train, y_train,
@@ -480,7 +488,7 @@ class ThresholdOptimizer:
         Construct from any object exposing ``.X_train``, ``.y_train``,
         ``.task_type``, and (optionally) ``.robust_params_override``.
 
-        ``robust_params_override`` — if present — is merged into
+        ``robust_params_override``, if present, is merged into
         ``base_params`` so that dataset-specific settings (e.g. a different
         algorithm or CV count) are picked up automatically.
 
@@ -522,7 +530,7 @@ class ThresholdOptimizer:
         width = len(str(n))
 
         if self.verbose:
-            _hdr(f"ThresholdOptimizer  —  {n} threshold(s) to evaluate")
+            _hdr(f"ThresholdOptimizer  |  {n} threshold(s) to evaluate")
             _kv("Grid",     str(self.thresholds))
             _kv("Weights",  "  ".join(f"{k}={v:.2g}" for k, v in self.weights.items()))
             _kv("Base CV",  f"outer_cv={self.base_params.get('outer_cv')}  "
@@ -722,7 +730,7 @@ def _print_report(opt: OptimiserResult) -> None:
     score_arrow  = "RMSE (↓ lower=better)" if is_reg else "AUC (↑ higher=better)"
 
     print()
-    _hdr(f"ThresholdOptimizer Report  —  {opt.task_type}  |  {metric}")
+    _hdr(f"ThresholdOptimizer Report  |  {opt.task_type}  |  {metric}")
     _kv("Thresholds evaluated", str(opt.n_thresholds_evaluated))
     _kv("Total elapsed",        f"{opt.total_elapsed:.0f}s")
     _kv("Objective weights",
@@ -841,7 +849,7 @@ def _plot(opt: OptimiserResult, figsize: Tuple[float, float] = (12, 4)) -> Any:
         import matplotlib.ticker as mtick
     except ImportError:
         warnings.warn(
-            "matplotlib is not installed — install with: pip install matplotlib",
+            "matplotlib is not installed. Install with: pip install matplotlib",
             RuntimeWarning, stacklevel=3,
         )
         return None
@@ -855,13 +863,13 @@ def _plot(opt: OptimiserResult, figsize: Tuple[float, float] = (12, 4)) -> Any:
 
     fig, axes = plt.subplots(1, 3, figsize=figsize)
     fig.suptitle(
-        f"ThresholdOptimizer — {opt.task_type}  ({opt.metric_name.upper()})",
+        f"ThresholdOptimizer: {opt.task_type}  ({opt.metric_name.upper()})",
         fontsize=11, y=1.02,
     )
 
     best_thr = opt.best.threshold
 
-    # Panel 1 — Score ± std
+    # Panel 1: Score ± std
     ax = axes[0]
     lo_band = [s - e for s, e in zip(scores, stds)]
     hi_band = [s + e for s, e in zip(scores, stds)]
@@ -876,7 +884,7 @@ def _plot(opt: OptimiserResult, figsize: Tuple[float, float] = (12, 4)) -> Any:
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
 
-    # Panel 2 — Jaccard stability
+    # Panel 2: Jaccard stability
     ax = axes[1]
     ax.plot(thrs, stabs, "s-", color="tab:green", linewidth=1.8, markersize=5)
     ax.axvline(best_thr, color="red", linestyle="--", linewidth=1.2)
@@ -886,7 +894,7 @@ def _plot(opt: OptimiserResult, figsize: Tuple[float, float] = (12, 4)) -> Any:
     ax.set_ylim(0, 1.05)
     ax.grid(True, alpha=0.3)
 
-    # Panel 3 — Compression %
+    # Panel 3: Compression %
     ax = axes[2]
     ax.plot(thrs, comprs, "^-", color="tab:orange", linewidth=1.8, markersize=5)
     ax.axvline(best_thr, color="red", linestyle="--", linewidth=1.2)

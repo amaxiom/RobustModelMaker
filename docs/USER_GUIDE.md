@@ -16,17 +16,30 @@ RobustModelMaker (ROBUST) is a reproducible model-building pipeline for small-to
 8. [External validation](#8-external-validation)
 9. [Permutation importance](#9-permutation-importance)
 10. [SHAP integration](#10-shap-integration)
-11. [Saving and loading results](#11-saving-and-loading-results) — class API, automatic save, output files, print report, reload
+11. [Saving and loading results](#11-saving-and-loading-results): class API, automatic save, output files, print report, reload
 12. [Grouped cross-validation](#12-grouped-cross-validation)
 13. [Probability calibration](#13-probability-calibration)
 14. [Working with missing values](#14-working-with-missing-values)
 15. [Using the functional API](#15-using-the-functional-api)
+16. [Other methods worth knowing](#16-other-methods-worth-knowing)
 
 ---
 
 ## 1. Installation
 
-ROBUST is a single-file library. Copy `RobustModelMaker.py` into your project and import it:
+Install from PyPI:
+
+```bash
+pip install robustmodelmaker
+pip install robustmodelmaker[xgb]      # to also enable alg="xgb"
+```
+
+```python
+from robustmodelmaker import RobustModelMaker, run_pipeline
+```
+
+ROBUST is also a single-file library, so you can copy `RobustModelMaker.py` into your
+project instead:
 
 ```python
 import sys
@@ -36,7 +49,8 @@ from RobustModelMaker import RobustModelMaker, run_pipeline
 
 **Required packages:** `numpy`, `pandas`, `scikit-learn`, `scipy`
 
-**Optional:** `xgboost` (for `alg="xgb"`)
+**Optional:** `xgboost` (for `alg="xgb"`), `matplotlib` (for `plot_feature_stability()`),
+`shap` (for the SHAP workflow in section 10)
 
 ---
 
@@ -65,7 +79,7 @@ print(f"Selected {len(result.selected_features)} features")
 print(f"Nested CV AUC: {result.nested_cv_result.mean_score:.4f} "
       f"+/- {result.nested_cv_result.std_score:.4f}")
 
-# Predict on new data
+# Predict on new data (X_new is a fresh matrix with the same columns as X)
 predictions = maker.predict(X_new)
 ```
 
@@ -118,7 +132,7 @@ Set `task_type` to one of:
 | `"las"` | Lasso (L1 logistic / lasso regression) | all | Sparse coefficients; strong built-in feature selector |
 | `"log"` | L2 logistic regression | classification only | Reliable baseline for binary and multiclass problems |
 | `"svm"` | Linear SVM | all | Effective in high-dimensional feature spaces |
-| `"rf"` | Random Forest | all | No scaling needed; handles non-linear relationships; `class_weight="balanced"` |
+| `"rf"` | Random Forest | all | No scaling needed; handles non-linear relationships; `class_weight="balanced_subsample"` |
 | `"xgb"` | XGBoost | all | Highest raw performance; requires `pip install xgboost`; slowest |
 | `"mlp"` | Multi-layer perceptron | all | Neural baseline; slower on small datasets |
 | `"lin"` | Ordinary least squares | regression only | Fully interpretable; no regularisation |
@@ -153,12 +167,9 @@ The algorithm governs both the stability selection phase (bootstrap subsampling)
 | `n_bootstrap` | int | `100` | Bootstrap resamples for stability selection |
 | `cutoff_n_bootstrap` | int | `1000` | Bootstrap resamples for binary classification cutoff determination |
 | `spec` | float | `0.98` | Target specificity for binary cutoff determination |
-| `random_state` | int | `42` | Seed for all random operations |
-| `preprocess` | str | `"auto"` | Preprocessing: `"auto"` (scale only for algorithms that need it), `"standard"` (always scale), `"none"` |
+| `random_state` | int or None | `42` | Seed for all random operations. `None` disables seeding and makes runs non-reproducible |
+| `preprocess` | str | `"auto"` | Scaling policy. `"auto"` scales for `"eln"` only, `"standard"` always scales, `"none"` never scales. Median imputation always runs regardless of this setting |
 | `calibration` | str | `"none"` | Probability calibration: `"none"`, `"sigmoid"`, `"isotonic"` |
-| `groups` | array-like | `None` | Group labels for grouped CV (prevents data leakage across groups) |
-| `X_validation` | DataFrame/array | `None` | External validation set features (evaluated after fitting) |
-| `y_validation` | array-like | `None` | External validation set labels |
 | `n_jobs` | int | `-1` | Parallelism (-1 uses all available cores) |
 | `verbose` | bool | `True` | Print progress during fitting |
 | `preserve_nans` | bool | `True` | If `False`, drop high-missingness rows and columns before processing |
@@ -166,22 +177,39 @@ The algorithm governs both the stability selection phase (bootstrap subsampling)
 | `output_dir` | str | `"robust_model_results"` | Directory for saved outputs (used when `save_results=True`) |
 | `output_prefix` | str | `"robust_model"` | Filename prefix for all saved files (used when `save_results=True`) |
 
+`groups`, `X_validation` and `y_validation` are **not** constructor parameters.
+Pass them to `.fit()`, or to `run_pipeline()` directly. `RobustModelMaker(groups=...)`
+raises `TypeError`.
+
+`feature_names` is likewise a `.fit()` / `run_pipeline()` parameter, not a
+constructor one.
+
 ### `.fit()` parameters
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `X` | DataFrame or array | required | Feature matrix |
-| `y` | array-like | required | Target vector |
-| `groups` | array-like | `None` | Group labels (overrides constructor `groups` if both are provided) |
-| `X_validation` | DataFrame or array | `None` | External validation features (overrides constructor value) |
-| `y_validation` | array-like | `None` | External validation labels (overrides constructor value) |
-| `feature_names` | list of str | `None` | Feature names to use when `X` is a numpy array without column names |
+Listed in signature order. `feature_names` is the third positional parameter,
+so pass the rest by keyword.
+
+| Position | Parameter | Type | Default | Description |
+|---|---|---|---|---|
+| 1 | `X` | DataFrame or array | required | Feature matrix |
+| 2 | `y` | array-like | required | Target vector |
+| 3 | `feature_names` | list of str | `None` | Feature names to use when `X` is a numpy array without column names |
+| 4 | `groups` | array-like | `None` | Group labels for grouped CV (prevents leakage across groups) |
+| 5 | `X_validation` | DataFrame or array | `None` | External validation features |
+| 6 | `y_validation` | array-like | `None` | External validation labels |
+
+```python
+maker.fit(X, y, groups=subject_ids)          # correct
+maker.fit(X, y, subject_ids)                 # WRONG: binds to feature_names
+```
 
 ### `stability_threshold` guidance
 
 | Value | Meaning | When to use |
 |---|---|---|
-| 0.5 | Selected in more than half of bootstrap samples | Lenient; more features retained; benchmark suite default |
+| 0.5 | Selected in more than half of the resamples | Lenient; more features retained |
 | 0.6 | 60% bootstrap stability | Balanced starting point |
 | 0.7 | 70% stability (default) | Standard scientific usage |
 | 0.8 | High stability | When interpretability and parsimony matter most |
@@ -257,7 +285,8 @@ Prints a formatted block covering task, algorithm, selected features, nested CV 
 ```python
 tables = result.results_tables()
 # Returns a dict of pd.DataFrames. Keys always present:
-#   "overview"                           -- task, algorithm, n_features, score
+#   "overview"                           -- long-form table: section, attribute,
+#                                           value, description
 #   "selected_features"                  -- selected feature names
 #   "stability_selection"                -- per-feature selection frequency
 #   "feature_stability_cv"               -- per-fold feature selection table
@@ -268,8 +297,9 @@ tables = result.results_tables()
 #   "cutoff_distribution"                -- bootstrap cutoff values
 #
 # Present when external validation was run:
-#   "external_validation"                -- summary metrics
-#   "external_validation_metrics"        -- full metric dict as a table
+#   "external_validation"                -- summary metrics (one row)
+#   "external_validation_metrics"        -- identical to "external_validation";
+#                                           kept as an alias for older code
 #   "external_validation_predictions"    -- predicted vs actual for each sample
 #   "external_validation_confusion_matrix" -- confusion matrix (classification)
 
@@ -277,7 +307,7 @@ tables = result.results_tables()
 result.save_results(output_dir="results/", prefix="my_model")
 ```
 
-**Note:** the `save_results()` method on `PipelineResult` takes a `prefix` parameter (not `output_prefix`). See section 11 for the full save API.
+**Note on keyword names:** `save_results()` and `save()` take `prefix`, on both `PipelineResult` and `RobustModelMaker`. Only the constructor and `run_pipeline()` use `output_prefix`. Passing `output_prefix` to `save_results()` raises `TypeError`. See section 11 for the full save API.
 
 ---
 
@@ -372,12 +402,21 @@ X_df  = shap_data["X"]             # processed, selected features as pd.DataFram
 names = shap_data["feature_names"] # np.ndarray
 
 import shap
-explainer = shap.TreeExplainer(model)
+
+# Pick the explainer that matches the algorithm you fitted.
+if shap_data["algorithm"] in ("rf", "xgb"):
+    explainer = shap.TreeExplainer(model)
+else:                                    # eln, rdg, las, log, svm, lin
+    explainer = shap.LinearExplainer(model, X_df)
+
 shap_values = explainer.shap_values(X_df)
 shap.summary_plot(shap_values, X_df)
 ```
 
-For linear models (`alg="eln"`), use `shap.LinearExplainer`. For XGBoost, use `shap.TreeExplainer`.
+Use `shap.TreeExplainer` for the tree algorithms (`"rf"`, `"xgb"`) and
+`shap.LinearExplainer` for the coefficient-based ones. `"mlp"` has neither, so use
+`shap.KernelExplainer`. The dict returned by `export_shap_ready()` includes an
+`"algorithm"` key so the choice can be made programmatically, as above.
 
 ---
 
@@ -387,9 +426,9 @@ For linear models (`alg="eln"`), use `shap.LinearExplainer`. For XGBoost, use `s
 
 ```python
 # Save all outputs after fitting
-maker.save_results(output_dir="results/", output_prefix="my_model")
+maker.save_results(output_dir="results/", prefix="my_model")
 # maker.save() is an alias for maker.save_results()
-maker.save(output_dir="results/", output_prefix="my_model")
+maker.save(output_dir="results/", prefix="my_model")
 ```
 
 ### Saving automatically at fit time
@@ -413,7 +452,7 @@ maker.fit(X, y)
 ```
 results/
     my_model_metadata.json                     -- parameters and summary metrics
-    my_model_pipeline_result.pkl               -- full PipelineResult object (pickle)
+    my_model_result.pkl                        -- full PipelineResult object (pickle)
     my_model_overview.csv
     my_model_selected_features.csv
     my_model_stability_selection.csv
@@ -421,6 +460,7 @@ results/
     my_model_nested_cv_scores.csv
     my_model_nested_cv_predictions.csv
     my_model_cutoff_distribution.csv           -- binary classification only
+    my_model_external_validation.csv           -- if validation set provided
     my_model_external_validation_metrics.csv   -- if validation set provided
     my_model_external_validation_predictions.csv
     my_model_external_validation_confusion_matrix.csv
@@ -453,7 +493,7 @@ print_pipeline_results(result, top_n=20)
 
 ```python
 import pickle
-with open("results/my_model_pipeline_result.pkl", "rb") as f:
+with open("results/my_model_result.pkl", "rb") as f:
     result = pickle.load(f)
 
 print(result.mean_score)
@@ -494,7 +534,18 @@ maker = RobustModelMaker(
 maker.fit(X, y)
 ```
 
-Calibration is applied after hyperparameter selection in each fold and to the final model. It has no effect on class-label predictions, only on the probability values returned by `predict_proba()`.
+Calibration is applied after hyperparameter selection in each fold and to the final model.
+
+It **does** change class-label predictions, not only probabilities. For binary tasks
+`predict()` thresholds the calibrated probability at the cutoff, and for multiclass it
+takes the argmax over calibrated probabilities, so both shift when calibration changes
+the underlying scores.
+
+**Calibration is silently skipped under grouped cross-validation.** When `groups` is
+passed to `.fit()`, `CalibratedClassifierCV` cannot reliably forward group labels across
+scikit-learn versions, so the uncalibrated model is fitted instead and a `UserWarning`
+is emitted. Combining `calibration="sigmoid"` with grouped CV therefore yields an
+uncalibrated model.
 
 **When to calibrate:** Random forests and XGBoost classifiers often produce poorly calibrated probabilities (overconfident or underconfident). If downstream decisions depend on the actual probability values (e.g. expected-value calculations, threshold selection), calibration is recommended.
 
@@ -553,3 +604,37 @@ print(cutoff.summary())
 # Get a configured estimator and its hyperparameter search space
 model, param_dist = get_algorithm_config("rf", "binary", random_state=42)
 ```
+
+`stability_selection()` also takes `sample_fraction` (default `0.7`), the fraction of
+rows drawn for each resample. Draws are made **without** replacement, so this is
+subsampling rather than bootstrapping; `determine_cutoff()` is a true bootstrap and
+draws with replacement.
+
+---
+
+## 16. Other methods worth knowing
+
+These exist on the fitted objects but are easy to miss.
+
+```python
+# Plot selection frequency for the top N features (requires matplotlib).
+# Returns a matplotlib Axes, so you can restyle or save it.
+ax = maker.plot_feature_stability(top_n=30)
+
+# The same reporting helpers available on PipelineResult are on the maker too
+maker.results_tables()          # dict of DataFrames
+maker.print_results(top_n=20)   # formatted console report
+print(maker.summary())          # the text block used in the saved summary.txt
+
+# Backwards-compatible aliases for the nested CV score, from v0.2
+result.nested_cv_result.mean_auc   # same value as .mean_score
+result.nested_cv_result.std_auc    # same value as .std_score
+
+# Permutation importance keeps the raw per-repeat matrix, not just the summary
+pi = maker.permutation_importance(X, y, n_repeats=20)
+pi.importances        # shape (n_selected_features, n_repeats)
+pi.importances_mean   # shape (n_selected_features,)
+pi.summary()          # DataFrame: feature, importance_mean, importance_std
+```
+
+---
