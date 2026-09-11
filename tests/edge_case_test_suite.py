@@ -621,7 +621,7 @@ def test_run_pipeline_verbose_prints_header_and_summary(capsys):
     out = capsys.readouterr().out
     assert "Running RobustModelMaker v0.3" in out
     assert "Algorithm: rdg" in out
-    assert "ROBUST MODEL MAKER v0.3 RESULTS" in out
+    assert "RobustModelMaker v0.3 RESULTS" in out
 
 
 def test_run_pipeline_verbose_reports_nan_dropping(capsys):

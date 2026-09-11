@@ -1,0 +1,31 @@
+{
+  "task_type": "binary",
+  "algorithm": "xgb",
+  "calibration": "none",
+  "metric_name": "roc_auc",
+  "mean_score": 0.7369716071511194,
+  "std_score": 0.026743560673302066,
+  "nested_cv_metric": "roc_auc",
+  "nested_cv_mean_score": 0.7369716071511194,
+  "nested_cv_std_score": 0.026743560673302066,
+  "n_selected_features": 16,
+  "selected_features": [
+    "panela_igf_ii",
+    "panela_mif",
+    "panela_ca_125",
+    "panelb_ca125",
+    "panelb_ca72_4",
+    "panelb_klk6",
+    "panelb_he4",
+    "panelc_ca125",
+    "panelc_he4",
+    "panelc_mesothelin",
+    "panelc_mmp7",
+    "panelc_spondin2",
+    "panelc_slpi",
+    "panele_eotaxin",
+    "panele_mmp_3",
+    "panele_ca72_4"
+  ],
+  "has_external_validation": false
+}

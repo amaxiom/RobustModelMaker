@@ -206,7 +206,7 @@ def _assert_fitted_result(result, expected_task: str, expected_algorithm: str | 
     assert result.stability_result.selection_frequencies.shape[0] == len(result.feature_names)
     assert np.all((result.stability_result.selection_frequencies >= 0) & (result.stability_result.selection_frequencies <= 1))
     text = result.summary()
-    assert "ROBUST MODEL MAKER" in text
+    assert "RobustModelMaker" in text
     assert f"Task: {expected_task}" in text
     tables = result.results_tables()
     required_tables = {
@@ -635,7 +635,7 @@ def test_results_tables_print_and_save(binary_df, tmp_path, capsys):
 
     result.print_results(top_n=3)
     captured = capsys.readouterr().out
-    assert "ROBUST MODEL MAKER RESULTS SUMMARY" in captured
+    assert "RobustModelMaker RESULTS SUMMARY" in captured
     assert "TOP LEVEL" in captured
     assert "NESTED CV RESULTS" in captured
 

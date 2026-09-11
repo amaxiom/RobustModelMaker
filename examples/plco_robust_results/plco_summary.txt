@@ -1,0 +1,18 @@
+============================================================
+ROBUST MODEL MAKER v0.3 RESULTS
+============================================================
+Task: binary
+Algorithm: xgb
+Calibration: none
+Selected features (16): [np.str_('panela_igf_ii'), np.str_('panela_mif'), np.str_('panela_ca_125'), np.str_('panelb_ca125'), np.str_('panelb_ca72_4'), np.str_('panelb_klk6'), np.str_('panelb_he4'), np.str_('panelc_ca125'), np.str_('panelc_he4'), np.str_('panelc_mesothelin'), np.str_('panelc_mmp7'), np.str_('panelc_spondin2'), np.str_('panelc_slpi'), np.str_('panele_eotaxin'), np.str_('panele_mmp_3'), np.str_('panele_ca72_4')]
+
+NESTED CV PERFORMANCE:
+Nested CV roc_auc: 0.7370 +/- 0.0267
+Per-fold scores: ['0.738', '0.736', '0.785', '0.721', '0.705']
+
+CUTOFF DETERMINATION:
+Cutoff: 0.3650 (95% CI: 0.3083 - 0.4752)
+Target specificity: 98.0%
+Achieved specificity: 97.9%
+Achieved sensitivity: 30.9%
+============================================================

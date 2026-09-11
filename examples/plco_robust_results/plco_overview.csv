@@ -1,0 +1,15 @@
+section,attribute,value,description
+top_level,task_type,binary,Resolved modelling task
+top_level,algorithm,xgb,Algorithm used
+top_level,calibration,none,Probability calibration method
+top_level,n_selected_features,16,Number of consensus selected features
+nested_cv,metric,roc_auc,Primary nested CV scoring metric
+nested_cv,mean_score,0.7369716071511194,Mean outer-fold score
+nested_cv,std_score,0.026743560673302066,Standard deviation across outer folds
+nested_cv,repeats,1,Number of repeated outer CV runs
+cutoff,target_specificity,0.98,Requested binary specificity
+cutoff,cutoff_median,0.36495875120162946,Median bootstrap decision cutoff
+cutoff,cutoff_ci_lower,0.3082930290698999,Lower bootstrap confidence bound
+cutoff,cutoff_ci_upper,0.4751585125923157,Upper bootstrap confidence bound
+cutoff,achieved_specificity,0.9789750328515112,Specificity at median cutoff
+cutoff,achieved_sensitivity,0.30851063829787234,Sensitivity at median cutoff

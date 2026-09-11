@@ -411,7 +411,7 @@ class PipelineResult:
             )
         return (
             f"{'=' * 60}\n"
-            f"ROBUST MODEL MAKER v0.3 RESULTS\n"
+            f"RobustModelMaker v0.3 RESULTS\n"
             f"{'=' * 60}\n"
             f"Task: {self.task_type}\n"
             f"Algorithm: {self.algorithm}\n"
@@ -1163,7 +1163,7 @@ PipelineResult.save_results = _robust_pipeline_result_save_results
 
 def _robust_pipeline_result_print_results(self, top_n: int = 20) -> None:
     print("=" * 60)
-    print("ROBUST MODEL MAKER RESULTS SUMMARY")
+    print("RobustModelMaker RESULTS SUMMARY")
     print("=" * 60)
     print(self.summary())
     tables = self.results_tables()

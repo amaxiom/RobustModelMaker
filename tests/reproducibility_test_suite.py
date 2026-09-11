@@ -3,7 +3,7 @@ reproducibility_test_suite.py
 ==============================
 RobustModelMaker -- reproducibility and determinism tests.
 
-These tests verify that ROBUST behaves deterministically when the same random_state
+These tests verify that RMM behaves deterministically when the same random_state
 is supplied, that different seeds produce structurally valid but numerically
 distinct results, that serialised models predict identically to live ones, and
 that stability frequencies converge with increasing bootstrap samples.

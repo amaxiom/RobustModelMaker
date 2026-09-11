@@ -1,6 +1,6 @@
 # RobustModelMaker User Guide
 
-RobustModelMaker (ROBUST) is a reproducible model-building pipeline for small-to-medium scientific datasets. It combines bootstrap stability selection with nested cross-validation to produce feature-reduced models that generalise reliably, with honest performance estimates that do not leak information from the test set into model-building decisions.
+RobustModelMaker (RMM) is a reproducible model-building pipeline for small-to-medium scientific datasets. It combines bootstrap stability selection with nested cross-validation to produce feature-reduced models that generalise reliably, with honest performance estimates that do not leak information from the test set into model-building decisions.
 
 ---
 
@@ -38,7 +38,7 @@ pip install robustmodelmaker[xgb]      # to also enable alg="xgb"
 from robustmodelmaker import RobustModelMaker, run_pipeline
 ```
 
-ROBUST is also a single-file library, so you can copy `RobustModelMaker.py` into your
+RMM is also a single-file library, so you can copy `RobustModelMaker.py` into your
 project instead:
 
 ```python
@@ -103,23 +103,23 @@ Set `task_type` to one of:
 | `"binary"` | Two-class outcome (0/1, True/False, case/control) | ROC-AUC |
 | `"multiclass"` | Three or more classes | Weighted OVR ROC-AUC |
 | `"regression"` | Continuous numeric target | Negative RMSE |
-| `"auto"` | Let ROBUST infer from `y` (see note below) | as above |
+| `"auto"` | Let RMM infer from `y` (see note below) | as above |
 
-**Auto-detection rules:** if `y` is float-typed and has more than `min(20, max(3, 0.2 × n))` unique values, ROBUST infers regression; 2 unique values gives binary; 3 up to `max(20, 0.2 × n)` unique values gives multiclass; anything else falls back to regression.
+**Auto-detection rules:** if `y` is float-typed and has more than `min(20, max(3, 0.2 × n))` unique values, RMM infers regression; 2 unique values gives binary; 3 up to `max(20, 0.2 × n)` unique values gives multiclass; anything else falls back to regression.
 
 > **Warning: `task_type="auto"` can silently misclassify your problem.** The heuristic relies on dtype and unique-value counts, which are unreliable proxies for scientific intent. Four specific failure modes to be aware of:
 >
-> 1. **Ordinal regression targets encoded as integers with few unique values.** A pain scale `[1, 2, 3, 4, 5]` has 5 unique integer values. Because it is not float-typed, the regression check is skipped, and ROBUST will classify this as multiclass and score it with AUC-OVR.
+> 1. **Ordinal regression targets encoded as integers with few unique values.** A pain scale `[1, 2, 3, 4, 5]` has 5 unique integer values. Because it is not float-typed, the regression check is skipped, and RMM will classify this as multiclass and score it with AUC-OVR.
 >
-> 2. **Float targets that are actually ordinal classes.** Star ratings stored as `[1.0, 2.0, 3.0, 4.0, 5.0]` are float-typed with 5 unique values. On a typical dataset, `5 <= 20`, so ROBUST infers multiclass rather than regression.
+> 2. **Float targets that are actually ordinal classes.** Star ratings stored as `[1.0, 2.0, 3.0, 4.0, 5.0]` are float-typed with 5 unique values. On a typical dataset, `5 <= 20`, so RMM infers multiclass rather than regression.
 >
-> 3. **Large multiclass problems with more than 20 classes.** A 21-class problem with float-coded labels will have 21 unique float values. On a small dataset (where `0.2 × n < 21`), the threshold `min(20, ...)` evaluates to 20, `21 > 20` triggers the regression check, and ROBUST silently runs regression on a classification problem.
+> 3. **Large multiclass problems with more than 20 classes.** A 21-class problem with float-coded labels will have 21 unique float values. On a small dataset (where `0.2 × n < 21`), the threshold `min(20, ...)` evaluates to 20, `21 > 20` triggers the regression check, and RMM silently runs regression on a classification problem.
 >
 > 4. **Large datasets with many integer-coded classes.** On a 1000-sample dataset the dynamic threshold becomes `max(20, 200) = 200`, meaning any integer-labelled target with up to 200 distinct values will be treated as multiclass. A continuous integer target (e.g., counts, ranks) with 50 unique values would be misclassified as multiclass.
 >
 > **Recommendation: always set `task_type` explicitly in scientific code.** `task_type="auto"` is provided for quick exploratory use only and should never appear in analysis code you intend to publish or reproduce.
 
-**Labels:** Any hashable type is supported for classification (strings, integers, booleans). ROBUST encodes them internally and decodes predictions back to the original label space, so `predict()` always returns values in the same format as `y`.
+**Labels:** Any hashable type is supported for classification (strings, integers, booleans). RMM encodes them internally and decodes predictions back to the original label space, so `predict()` always returns values in the same format as `y`.
 
 ---
 
@@ -514,7 +514,7 @@ maker = RobustModelMaker(alg="rf", task_type="binary", outer_cv=5, random_state=
 maker.fit(X, y, groups=groups)
 ```
 
-When `groups` is provided, ROBUST uses `GroupKFold` for both outer and inner folds, ensuring all rows from a given group are always in the same fold. This is critical for longitudinal data, repeated-measures designs, or any dataset with non-independent observations.
+When `groups` is provided, RMM uses `GroupKFold` for both outer and inner folds, ensuring all rows from a given group are always in the same fold. This is critical for longitudinal data, repeated-measures designs, or any dataset with non-independent observations.
 
 **Note:** Grouped CV is deterministic (no shuffling), so `repeated_outer_cv > 1` has no effect and is automatically set to 1.
 
@@ -553,13 +553,13 @@ uncalibrated model.
 
 ## 14. Working with missing values
 
-ROBUST handles NaN values in `X` automatically by default:
+RMM handles NaN values in `X` automatically by default:
 
 - `preserve_nans=True` (default): NaN values are passed through to the preprocessing pipeline, which uses median imputation inside each CV fold. The imputer is always fitted on training data only, with no leakage.
-- `preserve_nans=False`: ROBUST first applies a data-driven missingness filter that drops columns and rows whose missing fraction exceeds optimised thresholds, then proceeds with median imputation. Use this when very sparse features or heavily missing rows would otherwise dominate the analysis.
+- `preserve_nans=False`: RMM first applies a data-driven missingness filter that drops columns and rows whose missing fraction exceeds optimised thresholds, then proceeds with median imputation. Use this when very sparse features or heavily missing rows would otherwise dominate the analysis.
 
 ```python
-# Let ROBUST decide which rows/columns to drop based on missingness
+# Let RMM decide which rows/columns to drop based on missingness
 maker = RobustModelMaker(alg="eln", task_type="regression",
                          preserve_nans=False, random_state=42)
 maker.fit(X, y)
@@ -570,7 +570,7 @@ print(f"Original: {d['original_n_samples']} rows x {d['original_n_features']} fe
 print(f"Retained: {d['retained_n_samples']} rows x {d['retained_n_features']} features")
 ```
 
-The benchmark on the SECOM semiconductor dataset (1567 x 590 features, extensive real NaN values) confirms that ROBUST works reliably out of the box with `preserve_nans=True`. Note that the benchmark uses BenchMake archetypal (adversarial) splits, which produce lower scores than random splits would on the same data. See the [Implementation Guide](IMPLEMENTATION_GUIDE.md#13-benchmark-split-methodology-benchmake-archetypal-splits) for details.
+The benchmark on the SECOM semiconductor dataset (1567 x 590 features, extensive real NaN values) confirms that RMM works reliably out of the box with `preserve_nans=True`. Note that the benchmark uses BenchMake archetypal (adversarial) splits, which produce lower scores than random splits would on the same data. See the [Implementation Guide](IMPLEMENTATION_GUIDE.md#13-benchmark-split-methodology-benchmake-archetypal-splits) for details.
 
 ---
 

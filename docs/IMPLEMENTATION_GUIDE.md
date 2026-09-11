@@ -1,6 +1,6 @@
 # RobustModelMaker Implementation Guide
 
-This guide describes how ROBUST works internally, how its components fit together, and how to tune each stage to suit your dataset and runtime budget. It is intended for users who want to go beyond defaults and for developers who need to understand or extend the code.
+This guide describes how RMM works internally, how its components fit together, and how to tune each stage to suit your dataset and runtime budget. It is intended for users who want to go beyond defaults and for developers who need to understand or extend the code.
 
 ---
 
@@ -20,13 +20,13 @@ This guide describes how ROBUST works internally, how its components fit togethe
 12. [Handling class imbalance](#12-handling-class-imbalance)
 13. [Benchmark split methodology: BenchMake archetypal splits](#13-benchmark-split-methodology-benchmake-archetypal-splits)
 14. [Understanding the scoring metrics](#14-understanding-the-scoring-metrics)
-15. [Extending ROBUST](#15-extending-robust)
+15. [Extending RMM](#15-extending-robust)
 
 ---
 
 ## 1. Pipeline overview
 
-ROBUST runs five distinct phases:
+RMM runs five distinct phases:
 
 ```
 Input X, y
@@ -62,7 +62,7 @@ The critical design property is that **the test fold is never seen during prepro
 
 ### Validation checks
 
-ROBUST validates inputs before running anything. Errors are raised immediately and clearly:
+RMM validates inputs before running anything. Errors are raised immediately and clearly:
 
 - `X` must be a 2D numpy array or pandas DataFrame with at least 4 samples and at least 1 feature.
 - Infinite values in `X` raise an error (NaNs are allowed; infinities are not).
@@ -89,7 +89,7 @@ is a no-op when no NaNs remain.
 
 ### Missingness strategy (`preserve_nans=False`)
 
-When `preserve_nans=False`, ROBUST first runs `_smart_drop_nans`:
+When `preserve_nans=False`, RMM first runs `_smart_drop_nans`:
 
 1. For each combination of column-missingness threshold (0.1 to 0.9) and row-missingness threshold (0.1 to 0.9), it scores the retained region: `density * sqrt(retained_row_fraction) * sqrt(retained_col_fraction)`. This balances data completeness against sample retention.
 2. The thresholds achieving the best score are selected.
@@ -162,7 +162,7 @@ Fewer than 50 bootstraps can make the frequencies noisy enough that small random
 
 ### Structure
 
-ROBUST implements a true nested design:
+RMM implements a true nested design:
 
 ```
 Outer fold split (outer_cv folds, repeated repeated_outer_cv times)
@@ -220,7 +220,7 @@ A feature with `selected_in_n_folds == outer_cv * repeated_outer_cv` was selecte
 
 ## 5. Stage 4: Final model and cutoff
 
-After nested CV is complete (and the performance estimate is fully established), ROBUST fits the **final model** on all training data:
+After nested CV is complete (and the performance estimate is fully established), RMM fits the **final model** on all training data:
 
 1. Fit the final preprocessor on all training data.
 2. Run stability selection on all training data.
@@ -232,7 +232,7 @@ The final model is stored in `result_.robust_model`. It is the model used for `p
 
 ### Binary classification cutoff determination
 
-For `task_type="binary"`, ROBUST determines a probability cutoff by bootstrapping the control-class (negative class) out-of-fold predictions:
+For `task_type="binary"`, RMM determines a probability cutoff by bootstrapping the control-class (negative class) out-of-fold predictions:
 
 1. Collect the `outer_predictions` for all samples with true label 0 (controls).
 2. For each of `cutoff_n_bootstrap` bootstrap resamples of the control scores, find the `spec`-th quantile (default `spec=0.98`, meaning the 98th percentile of control scores).
@@ -256,7 +256,7 @@ predictions = maker.predict(X_new, cutoff=cutoff.cutoff_median)
 
 ## 6. Reproducibility by design
 
-ROBUST is designed to be fully deterministic given the same `random_state`:
+RMM is designed to be fully deterministic given the same `random_state`:
 
 - All random operations use explicit seeds derived from `random_state` via offsets (e.g. `random_state + fold_idx`, `random_state + 10000 + bootstrap_idx`).
 - `set_global_seed()` sets `numpy.random.seed`, and sets `PYTHONHASHSEED` only if it is not already present in the environment. Because the interpreter reads that variable at start-up, setting it here has no effect on the running process; it matters only for subprocesses.
@@ -278,7 +278,7 @@ The reproducibility test suite (`tests/reproducibility_test_suite.py`) verifies 
 
 ## 7. Parallelism and runtime
 
-ROBUST passes `n_jobs` to `RandomizedSearchCV` and to `stability_selection` (which passes it to the model). The total number of model fits is:
+RMM passes `n_jobs` to `RandomizedSearchCV` and to `stability_selection` (which passes it to the model). The total number of model fits is:
 
 ```
 fits = outer_cv * repeated_outer_cv * (n_bootstrap + n_iter * inner_cv + 1)
@@ -467,7 +467,7 @@ maker = RobustModelMaker(
 
 ## 12. Handling class imbalance
 
-ROBUST addresses class imbalance at two levels:
+RMM addresses class imbalance at two levels:
 
 1. **Stratified splitting:** `StratifiedKFold` is used for classification tasks, ensuring class proportions are preserved in each fold. When `groups` is supplied, `GroupKFold` is used instead for every task type, and class proportions are then not controlled.
 
@@ -501,13 +501,13 @@ The consequence is that BenchMake benchmark scores are **systematically lower** 
 
 | Scenario | What to expect |
 |---|---|
-| You run ROBUST on your data with default random splits | Scores will typically be higher than the benchmark suite reports for the same algorithm |
-| You compare your scores to the benchmark table | Lower benchmark scores do not mean ROBUST performs poorly on your data |
+| You run RMM on your data with default random splits | Scores will typically be higher than the benchmark suite reports for the same algorithm |
+| You compare your scores to the benchmark table | Lower benchmark scores do not mean RMM performs poorly on your data |
 | You use `pytest benchmarks/benchmark_suite.py` | The pass/fail thresholds are calibrated for the adversarial split, not for random splits |
 
 ### Internal consistency of the comparison
 
-Both ROBUST and the full-feature baseline in the benchmark suite use the same BenchMake split for each dataset. The relative comparison (ROBUST vs. baseline) is therefore valid and fair: any difference in score reflects feature selection, not the split. Only the absolute scores are affected by the adversarial methodology.
+Both RMM and the full-feature baseline in the benchmark suite use the same BenchMake split for each dataset. The relative comparison (RMM vs. baseline) is therefore valid and fair: any difference in score reflects feature selection, not the split. Only the absolute scores are affected by the adversarial methodology.
 
 ---
 
@@ -519,13 +519,13 @@ Both ROBUST and the full-feature baseline in the benchmark suite use the same Be
 | Multiclass | Weighted OVR ROC-AUC | 0 to 1 | 1.0 | Weighted by class frequency |
 | Regression | Negative RMSE | -inf to 0 | 0.0 | Negated so sklearn maximisation applies |
 
-**Regression scores are always negative** (they are negated RMSE, not RMSE itself). A score of -1.23 means the RMSE is 1.23 in the target's units. A less negative score (e.g. -0.8) is better than a more negative one (e.g. -1.5). When comparing ROBUST to a baseline, a positive delta means ROBUST had a smaller RMSE.
+**Regression scores are always negative** (they are negated RMSE, not RMSE itself). A score of -1.23 means the RMSE is 1.23 in the target's units. A less negative score (e.g. -0.8) is better than a more negative one (e.g. -1.5). When comparing RMM to a baseline, a positive delta means RMM had a smaller RMSE.
 
-The `mean_score` and `std_score` attributes use this sign convention throughout. The `floor_score` parameter in the benchmark suite is set accordingly (e.g. `floor_score=-8.0` for the Graphene Oxide dataset means ROBUST must achieve a mean neg-RMSE better than -8.0, i.e. RMSE < 8.0 eV).
+The `mean_score` and `std_score` attributes use this sign convention throughout. The `floor_score` parameter in the benchmark suite is set accordingly (e.g. `floor_score=-8.0` for the Graphene Oxide dataset means RMM must achieve a mean neg-RMSE better than -8.0, i.e. RMSE < 8.0 eV).
 
 ---
 
-## 15. Extending ROBUST
+## 15. Extending RMM
 
 ### Adding a new algorithm
 
@@ -539,7 +539,7 @@ The `mean_score` and `std_score` attributes use this sign convention throughout.
 ```python
 from RobustModelMaker import stability_selection, nested_cross_validation
 
-# Preprocess first (or let ROBUST handle it inside nested_cross_validation)
+# Preprocess first (or let RMM handle it inside nested_cross_validation)
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline

@@ -25,6 +25,12 @@ venv/
 .pytest_cache/
 .cache/
 
+# coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 # Test artefacts
 tests/performance_results/
 

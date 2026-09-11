@@ -2,23 +2,21 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.3.3-green.svg)](CHANGELOG.md)
-[![PyPI version](https://badge.fury.io/py/robustmodelmaker.svg)](https://pypi.org/project/robustmodelmaker/)
-
+[![Version](https://img.shields.io/badge/version-0.3.4-green.svg)](CHANGELOG.md)
 
 **A reproducible model-building pipeline for small-to-medium scientific datasets.**
 
-RobustModelMaker (ROBUST) combines bootstrap stability selection with leakage-safe nested cross-validation to identify a stable, minimal feature subset and produce honest performance estimates. It is designed for scientific datasets where reproducibility, interpretability, and honest generalisation estimates matter as much as raw predictive performance.
+RobustModelMaker (RMM) combines bootstrap stability selection with leakage-safe nested cross-validation to identify a stable, minimal feature subset and produce honest performance estimates. It is designed for scientific datasets where reproducibility, interpretability, and honest generalisation estimates matter as much as raw predictive performance.
 
 ---
 
 ## Why RobustModelMaker?
 
-Standard machine learning pipelines applied to scientific data suffer from two problems that ROBUST addresses directly:
+Standard machine learning pipelines applied to scientific data suffer from two problems that RMM addresses directly:
 
-**Optimistic performance estimates.** When feature selection, hyperparameter tuning, and model evaluation share the same data, the reported score reflects the data used for model building, not future data. ROBUST uses a strict nested cross-validation design in which each of those steps is performed entirely on the training partition of each fold. The test partition is used only to evaluate the final fold model, never to inform any modelling decision.
+**Optimistic performance estimates.** When feature selection, hyperparameter tuning, and model evaluation share the same data, the reported score reflects the data used for model building, not future data. RMM uses a strict nested cross-validation design in which each of those steps is performed entirely on the training partition of each fold. The test partition is used only to evaluate the final fold model, never to inform any modelling decision.
 
-**Unstable feature selection.** Single-run feature selection methods produce a feature set that can change substantially with small changes in the data. ROBUST runs bootstrap stability selection: features are ranked by how consistently they are selected across hundreds of random subsamples of the training data. Only features that exceed a stability threshold (selected in at least 70% of bootstrap runs by default) are retained.
+**Unstable feature selection.** Single-run feature selection methods produce a feature set that can change substantially with small changes in the data. RMM runs bootstrap stability selection: features are ranked by how consistently they are selected across hundreds of random subsamples of the training data. Only features that exceed a stability threshold (selected in at least 70% of bootstrap runs by default) are retained.
 
 The result is a model built on a smaller, more reproducible feature set whose estimated performance is trustworthy.
 
@@ -45,7 +43,7 @@ The result is a model built on a smaller, more reproducible feature set whose es
 
 ## Installation
 
-ROBUST is a single-file library with no build step. Copy `RobustModelMaker.py` into your project and import it:
+RMM is a single-file library with no build step. Copy `RobustModelMaker.py` into your project and import it:
 
 ```python
 import sys
@@ -116,25 +114,25 @@ result = run_pipeline(X, y, alg="eln", task_type="binary",
 
 ## Selected results from the benchmark suite
 
-Three real scientific datasets are used to evaluate ROBUST against a full-feature nested-CV baseline using the same algorithm and fold structure. All three benchmarks use Random Forest (`rf`) for both ROBUST and the baseline, isolating the effect of bootstrap stability selection from any algorithm differences. The benchmark uses BenchMake archetypal splits to ensure train and test sets are representative rather than randomly sampled.
+Three real scientific datasets are used to evaluate RMM against a full-feature nested-CV baseline using the same algorithm and fold structure. All three benchmarks use Random Forest (`rf`) for both RMM and the baseline, isolating the effect of bootstrap stability selection from any algorithm differences. The benchmark uses BenchMake archetypal splits to ensure train and test sets are representative rather than randomly sampled.
 
-| Dataset | Task | n_train x p | ROBUST feats | Reduction | BL score | ROBUST score | p | Outcome |
+| Dataset | Task | n_train x p | RMM feats | Reduction | BL score | RMM score | p | Outcome |
 |---|---|---|---|---|---|---|---|---|
 | SECOM Manufacturing | binary | 1253 x 590 | 301 | 49.0% | 0.6814 AUC | 0.6835 AUC | 0.770 | preserved |
 | Urban Land Cover | multiclass | 540 x 147 | 66 | 55.1% | 0.9827 AUC | 0.9849 AUC | 0.432 | preserved |
 | Graphene Oxide Bulk | regression | 1293 x 309 | 150 | 51.5% | 0.0266 RMSE | 0.0343 RMSE | 0.193 | preserved |
 
-Classification metrics are AUC-ROC (binary) and weighted OVR AUC (multiclass), higher is better. Regression metric is RMSE in eV, lower is better. The p-value column is from the paired Wilcoxon signed-rank test on per-fold scores. Across all three tasks ROBUST roughly halves the feature count with no statistically significant change in performance, yielding score-per-feature efficiency gains of 1.97x (SECOM), 2.23x (Urban Land Cover), and 2.66x (Graphene Oxide).
+Classification metrics are AUC-ROC (binary) and weighted OVR AUC (multiclass), higher is better. Regression metric is RMSE in eV, lower is better. The p-value column is from the paired Wilcoxon signed-rank test on per-fold scores. Across all three tasks RMM roughly halves the feature count with no statistically significant change in performance, yielding score-per-feature efficiency gains of 1.97x (SECOM), 2.23x (Urban Land Cover), and 2.66x (Graphene Oxide).
 
 **Benchmark configuration:** `outer_cv=10`, `inner_cv=10`, `n_bootstrap=100`, `n_iter=100`, `cutoff_n_bootstrap=500`, `random_state=42`, `n_jobs=1`. Apart from the selection threshold these are the production defaults. The base `stability_threshold` is 0.75 rather than the library default of 0.70, so that the benchmark operates at a more demanding selection criterion. Per-dataset thresholds from `tools/Threshold_Optimisation.ipynb` override the base value where available: 0.60 for SECOM Manufacturing and 0.80 for Urban Land Cover; Graphene Oxide Bulk uses the base 0.75. The full benchmark takes several hours of wall-clock time at these settings.
 
 **Outcome key:** `preserved` is the primary success criterion: the stability-selected feature subset achieves statistically equivalent performance to the full-feature baseline (paired Wilcoxon, p >= 0.05) while using a fraction of the features. The selected features are robust across bootstrap resamples of the training data, not optimal for any single model fit; a small non-significant performance difference from the baseline is the expected and intended outcome. The other two outcomes the benchmark can return are `sig. better *` (unexpected improvement) and `sig. worse *` (significant loss).
 
-**Regression scores** are reported as RMSE (lower is better). Internally, ROBUST stores negative RMSE following sklearn convention so that all metrics can be maximised; the benchmark console report and README table always display positive RMSE for readability.
+**Regression scores** are reported as RMSE (lower is better). Internally, RMM stores negative RMSE following sklearn convention so that all metrics can be maximised; the benchmark console report and README table always display positive RMSE for readability.
 
-**Note on split methodology:** All benchmarks use [BenchMake](https://github.com/amaxiom/benchmake) archetypal splits, which are adversarial by design. BenchMake selects maximally representative train/test partitions that keep the two sets apart in feature space, producing more conservative (lower) scores than conventional random splits would on the same datasets. This is intentional: the benchmark is a worst-case assessment. Scores you observe when running ROBUST on your own data with the default random splits will typically be higher. The ROBUST vs. full-feature baseline comparison within each benchmark is internally consistent because both models use the same split.
+**Note on split methodology:** All benchmarks use [BenchMake](https://github.com/amaxiom/benchmake) archetypal splits, which are adversarial by design. BenchMake selects maximally representative train/test partitions that keep the two sets apart in feature space, producing more conservative (lower) scores than conventional random splits would on the same datasets. This is intentional: the benchmark is a worst-case assessment. Scores you observe when running RMM on your own data with the default random splits will typically be higher. The RMM vs. full-feature baseline comparison within each benchmark is internally consistent because both models use the same split.
 
-Exact scores depend on the random seed and runtime environment. Run `python benchmarks/benchmark_suite.py` or open `benchmarks/Benchmark_Suite.ipynb` for a full console report, including a 25+ test statistical battery for each dataset comparing ROBUST and baseline per-fold scores.
+Exact scores depend on the random seed and runtime environment. Run `python benchmarks/benchmark_suite.py` or open `benchmarks/Benchmark_Suite.ipynb` for a full console report, including a 25+ test statistical battery for each dataset comparing RMM and baseline per-fold scores.
 
 ---
 
@@ -142,7 +140,7 @@ Exact scores depend on the random seed and runtime environment. Run `python benc
 
 ```
 RobustModelMaker/
-├── RobustModelMaker.py              Single-file library (all you need to use ROBUST)
+├── RobustModelMaker.py              Single-file library (all you need to use RMM)
 ├── README.md                        This file
 ├── requirements.txt                 Minimum dependency versions
 ├── pytest.ini                       Test discovery configuration
@@ -231,7 +229,7 @@ coverage report --include="RobustModelMaker.py" -m
 | Guide | Contents |
 |---|---|
 | [User Guide](docs/USER_GUIDE.md) | Parameters, methods, prediction, validation, SHAP, saving |
-| [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md) | Internal design, tuning for speed and rigor, algorithm details, extending ROBUST |
+| [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md) | Internal design, tuning for speed and rigor, algorithm details, extending RMM |
 | [Interpretation Guide](docs/INTERPRETATION_GUIDE.md) | Reading results correctly, statistical tests, what to report in a paper |
 
 ---
@@ -247,10 +245,10 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 
-# ROBUST: stability-selected feature subset
+# RMM: stability-selected feature subset
 maker = RobustModelMaker(alg="rdg", task_type="binary",
                           outer_cv=5, n_bootstrap=100, random_state=42).fit(X, y)
-print(f"ROBUST: {len(maker.result_.selected_features)} features, "
+print(f"RMM: {len(maker.result_.selected_features)} features, "
       f"AUC {maker.result_.nested_cv_result.mean_score:.4f}")
 
 # Access out-of-fold predictions for calibration or downstream analysis

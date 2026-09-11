@@ -3,7 +3,7 @@ benchmark_suite.py
 =======================
 RobustModelMaker -- capability demonstration using three real scientific datasets.
 
-Each scenario runs ROBUST (stability-selected feature subset) against a full-feature
+Each scenario runs RMM (stability-selected feature subset) against a full-feature
 nested-CV baseline using the same algorithm and fold structure, then applies a
 battery of 25+ statistical tests to the per-fold score vectors.
 
@@ -104,7 +104,7 @@ robust = _load_robust_module()
 # Benchmark parameters
 # ---------------------------------------------------------------------------
 
-ROBUST_PARAMS: Dict[str, Any] = dict(
+RMM_PARAMS: Dict[str, Any] = dict(
     outer_cv=10,
     inner_cv=10,
     n_bootstrap=100,
@@ -128,11 +128,11 @@ ROBUST_PARAMS: Dict[str, Any] = dict(
 # split, random_state=42.
 #
 # Priority (lowest → highest):
-#   ROBUST_PARAMS['stability_threshold'] : global fallback
+#   RMM_PARAMS['stability_threshold'] : global fallback
 #   THRESHOLD_OVERRIDES[ds.name]         : per-dataset optimum (this dict)
 #   ds.robust_params_override            : explicit per-instance caller override
 #
-# Set any value to None to fall back to ROBUST_PARAMS['stability_threshold'].
+# Set any value to None to fall back to RMM_PARAMS['stability_threshold'].
 # Override in the notebook without re-importing:
 #   bs.THRESHOLD_OVERRIDES.update({"SECOM Manufacturing": 0.65})
 
@@ -142,10 +142,10 @@ THRESHOLD_OVERRIDES: Dict[str, Optional[float]] = {
     "Graphene Oxide Bulk":  None,   # run tools/Threshold_Optimisation.ipynb to get this value
 }
 
-_OUTER_CV = ROBUST_PARAMS["outer_cv"]
-_INNER_CV = ROBUST_PARAMS["inner_cv"]
-_N_ITER = ROBUST_PARAMS["n_iter"]
-_SEED = ROBUST_PARAMS["random_state"]
+_OUTER_CV = RMM_PARAMS["outer_cv"]
+_INNER_CV = RMM_PARAMS["inner_cv"]
+_N_ITER = RMM_PARAMS["n_iter"]
+_SEED = RMM_PARAMS["random_state"]
 
 # ---------------------------------------------------------------------------
 # Dataset container
@@ -213,7 +213,7 @@ class BenchmarkDataset:
         self.floor_score = floor_score
         self.train_idx = train_idx
         self.test_idx = test_idx
-        # Per-dataset overrides for ROBUST_PARAMS (merged at run time; ROBUST_PARAMS are the base).
+        # Per-dataset overrides for RMM_PARAMS (merged at run time; RMM_PARAMS are the base).
         self.robust_params_override: Dict[str, Any] = robust_params_override or {}
         # Ground-truth feature provenance for synthetic recovery scenarios.
         # When non-None these enable precision/recall/F1 reporting against the
@@ -372,7 +372,7 @@ def _load_graphene_oxide() -> BenchmarkDataset:
     """Graphene Oxide Bulk: structural descriptors, Formation_energy target.
 
     NaN dropping is applied globally (via robust._smart_drop_nans) so that both
-    ROBUST and the baseline operate on a consistent feature set and fold-specific
+    RMM and the baseline operate on a consistent feature set and fold-specific
     zero-variance columns (structurally sparse ring/bond descriptors) cannot
     cause vstack dimension mismatches inside nested CV.
     """
@@ -396,7 +396,7 @@ def _load_graphene_oxide() -> BenchmarkDataset:
     names_raw = np.array(X_raw.columns)
     X_arr = X_raw.to_numpy(dtype=float)
 
-    # Apply missingness-based NaN dropping globally so both ROBUST and baseline
+    # Apply missingness-based NaN dropping globally so both RMM and baseline
     # use an identical, consistent feature set across all CV folds.
     X_arr, names_clean, row_mask, _ = robust._smart_drop_nans(
         X_arr, names_raw, random_state=42, verbose=False
@@ -405,7 +405,7 @@ def _load_graphene_oxide() -> BenchmarkDataset:
 
     # Also drop globally constant columns (var == 0 after imputing with median):
     # these are structurally sparse descriptors that can't contribute information
-    # and cause fold-specific zero-variance failures inside ROBUST's nested CV.
+    # and cause fold-specific zero-variance failures inside RMM's nested CV.
     col_medians = np.nanmedian(X_arr, axis=0)
     X_imp = X_arr.copy()
     for j in range(X_imp.shape[1]):
@@ -449,7 +449,7 @@ def _build_baseline_estimator(
 ) -> Tuple[Any, Dict, str]:
     """Return (sklearn_pipeline, param_distributions, scoring_string).
 
-    The baseline always uses the same algorithm family as ROBUST so that the
+    The baseline always uses the same algorithm family as RMM so that the
     comparison measures the effect of stability selection alone, not a
     difference in model family.
     """
@@ -702,7 +702,7 @@ def _eval_fold(
 
 
 def _get_rf_estimator(task_type: str, seed: int) -> Any:
-    """Plain RF estimator (no pipeline) -- same family as ROBUST."""
+    """Plain RF estimator (no pipeline) -- same family as RMM."""
     if task_type == "regression":
         from sklearn.ensemble import RandomForestRegressor
         return RandomForestRegressor(n_estimators=100, random_state=seed, n_jobs=1)
@@ -780,7 +780,7 @@ class ComparatorResult:
     Attributes
     ----------
     name             : Human-readable label (e.g. "ANOVA k=24").
-    fold_scores      : Per-outer-fold predictive scores (same metric as ROBUST).
+    fold_scores      : Per-outer-fold predictive scores (same metric as RMM).
     fold_feature_sets: Per-fold selected feature names as Python sets.
     mean_score       : Mean of fold_scores.
     std_score        : Std of fold_scores.
@@ -830,7 +830,7 @@ def run_anova_nested_cv(
         (Urban Land Cover, 147 features), giving a 10-15% selection rate.
 
         The earlier √p rule (Guyon & Elisseeff, 2003) was tried first but
-        produces 4-8% retention -- 3-10× more aggressive than ROBUST at
+        produces 4-8% retention -- 3-10× more aggressive than RMM at
         threshold=0.75 (~20-35% retention) and more aggressive than typical
         RFECV and Boruta operating points.  That mismatch confounds the score
         comparison: a method forced to use 24 features against one using 180
@@ -848,7 +848,7 @@ def run_anova_nested_cv(
         a reasonable assumption after median-imputation and StandardScaler.  Its
         key limitation (inability to detect pure-interaction effects) makes it a
         conservative baseline that favours methods capable of detecting feature
-        interactions (ROBUST, Boruta, RFECV), so a good ANOVA result signals
+        interactions (RMM, Boruta, RFECV), so a good ANOVA result signals
         strong main effects while a weaker result hints that interactions matter.
 
     Note: ANOVA is a filter method with no inner CV.  It is the fastest
@@ -925,10 +925,10 @@ def run_rfecv_nested_cv(
         the CV score curve on these datasets plateaus well before p=1, so the
         effective selection is governed by the data.  A higher floor (e.g. n//10)
         would be more conservative but risks truncating the elimination curve
-        before CV reaches the true minimum, making the comparison with ROBUST
+        before CV reaches the true minimum, making the comparison with RMM
         (which can also select very few features) unfair.
 
-    scoring: identical to ROBUST's scoring metric (AUC for classification,
+    scoring: identical to RMM's scoring metric (AUC for classification,
         neg-RMSE for regression) so both selection and evaluation minimise the
         same loss surface.  Using accuracy instead of AUC on the class-imbalanced
         SECOM dataset (~7% failures) would produce misleadingly optimistic feature
@@ -944,7 +944,7 @@ def run_rfecv_nested_cv(
         trees added <5% stability improvement at roughly double the runtime.
 
     cv=inner_cv (5-fold)
-        Matches ROBUST's inner loop depth for a direct comparison of selection
+        Matches RMM's inner loop depth for a direct comparison of selection
         overhead.  Fewer folds (3) would reduce RFECV runtime but yield noisier
         CV-curve minimum estimates; more folds (10) would make the nested design
         prohibitively slow (10 outer × 10 inner × ~step iterations).
@@ -1069,7 +1069,7 @@ def run_boruta_nested_cv(
         Lower percentiles (e.g. perc=90) would accept features that beat only
         the 90th-percentile shadow importance, reducing false negatives at the
         cost of more false positives.  perc=100 is appropriate for a benchmark
-        context because it makes Boruta err on the same side as ROBUST
+        context because it makes Boruta err on the same side as RMM
         (threshold=0.75: a feature must appear in ≥75% of bootstrap samples) --
         both methods prefer false negatives to false positives, so the comparison
         between them is about selection *strategy*, not about one being inherently
@@ -1258,7 +1258,7 @@ def run_statistical_battery(
     task_type: str,
     floor_score: float,
 ) -> pd.DataFrame:
-    """Run 25+ statistical tests comparing ROBUST vs baseline per-fold scores."""
+    """Run 25+ statistical tests comparing RMM vs baseline per-fold scores."""
     rows: List[Dict] = []
 
     def row(test: str, stat: Any, pval: float = float("nan"), interp: str = ""):
@@ -1267,20 +1267,20 @@ def run_statistical_battery(
     n = len(scores_robust)
 
     # 1. Descriptive statistics
-    row("N folds (ROBUST / Baseline)", f"{n} / {len(scores_bl)}")
-    row("ROBUST mean +/- std", f"{np.mean(scores_robust):.4f} +/- {np.std(scores_robust):.4f}")
+    row("N folds (RMM / Baseline)", f"{n} / {len(scores_bl)}")
+    row("RMM mean +/- std", f"{np.mean(scores_robust):.4f} +/- {np.std(scores_robust):.4f}")
     row("BL     mean +/- std", f"{np.mean(scores_bl):.4f} +/- {np.std(scores_bl):.4f}")
-    row("ROBUST median [IQR]",
+    row("RMM median [IQR]",
         f"{np.median(scores_robust):.4f} "
         f"[{np.percentile(scores_robust, 25):.4f}-{np.percentile(scores_robust, 75):.4f}]")
     row("BL     median [IQR]",
         f"{np.median(scores_bl):.4f} "
         f"[{np.percentile(scores_bl, 25):.4f}-{np.percentile(scores_bl, 75):.4f}]")
-    row("ROBUST min / max", f"{np.min(scores_robust):.4f} / {np.max(scores_robust):.4f}")
+    row("RMM min / max", f"{np.min(scores_robust):.4f} / {np.max(scores_robust):.4f}")
     row("BL     min / max", f"{np.min(scores_bl):.4f} / {np.max(scores_bl):.4f}")
 
     # 2. Normality tests
-    for scores, label in [(scores_robust, "ROBUST"), (scores_bl, "BL")]:
+    for scores, label in [(scores_robust, "RMM"), (scores_bl, "BL")]:
         if n >= 3:
             sw = stats.shapiro(scores)
             row(f"Shapiro-Wilk normality ({label})", sw.statistic, sw.pvalue,
@@ -1307,14 +1307,14 @@ def run_statistical_battery(
             "equal var" if bart.pvalue > 0.05 else "unequal var")
 
     var_ratio = np.var(scores_robust, ddof=1) / max(np.var(scores_bl, ddof=1), 1e-15)
-    row("Variance ratio (ROBUST var / BL var)", var_ratio, interp=
-        "ROBUST more stable" if var_ratio < 1 else "BL more stable")
+    row("Variance ratio (RMM var / BL var)", var_ratio, interp=
+        "RMM more stable" if var_ratio < 1 else "BL more stable")
 
     # 5. Parametric location tests
     if n == len(scores_bl):
         tt = stats.ttest_rel(scores_robust, scores_bl)
-        row("Paired t-test (ROBUST vs BL)", tt.statistic, tt.pvalue,
-            ("ROBUST superior *" if tt.pvalue < 0.05 and tt.statistic > 0
+        row("Paired t-test (RMM vs BL)", tt.statistic, tt.pvalue,
+            ("RMM superior *" if tt.pvalue < 0.05 and tt.statistic > 0
              else "BL superior *" if tt.pvalue < 0.05 else "ns"))
         lo, hi = _parametric_diff_ci(scores_robust, scores_bl)
         row("  95% CI for paired mean diff (parametric)", f"[{lo:.4f}, {hi:.4f}]")
@@ -1324,7 +1324,7 @@ def run_statistical_battery(
         "significant" if tt_ind.pvalue < 0.05 else "ns")
 
     tt1 = stats.ttest_1samp(scores_robust, floor_score)
-    row(f"One-sample t-test ROBUST vs floor={floor_score}", tt1.statistic, tt1.pvalue,
+    row(f"One-sample t-test RMM vs floor={floor_score}", tt1.statistic, tt1.pvalue,
         "above floor *" if tt1.pvalue < 0.05 and tt1.statistic > 0 else "ns")
 
     tt1_bl = stats.ttest_1samp(scores_bl, floor_score)
@@ -1353,9 +1353,9 @@ def run_statistical_battery(
     if n == len(scores_bl):
         wins, ties, p_sign = _sign_test(scores_robust, scores_bl)
         row(
-            f"Sign test (ROBUST wins {wins}/{n - ties} non-tied folds)",
+            f"Sign test (RMM wins {wins}/{n - ties} non-tied folds)",
             float(wins), p_sign,
-            "ROBUST preferred *" if p_sign < 0.05 and wins > n / 2
+            "RMM preferred *" if p_sign < 0.05 and wins > n / 2
             else "BL preferred *" if p_sign < 0.05 else "ns",
         )
 
@@ -1369,15 +1369,15 @@ def run_statistical_battery(
     row("Hedges' g (small-n corrected d)", g, interp=f"{g:+.4f}")
 
     cl = _common_language_es(scores_robust, scores_bl)
-    row("Common language effect size P(ROBUST>BL)", cl, interp=
-        f"ROBUST wins {'%.0f%%' % (cl * 100)} of comparisons")
+    row("Common language effect size P(RMM>BL)", cl, interp=
+        f"RMM wins {'%.0f%%' % (cl * 100)} of comparisons")
 
     rb = _rank_biserial(scores_robust, scores_bl)
     row("Rank-biserial correlation r (from MWU)", rb, interp=f"r={rb:+.3f}")
 
     # 8. Bootstrap confidence intervals
     obs, boot_lo, boot_hi = _bootstrap_diff_ci(scores_robust, scores_bl)
-    row("Bootstrap delta-mean (ROBUST - BL), obs", obs)
+    row("Bootstrap delta-mean (RMM - BL), obs", obs)
     row("  95% bootstrap CI for delta-mean", f"[{boot_lo:.4f}, {boot_hi:.4f}]",
         interp="excludes 0 *" if not (boot_lo <= 0 <= boot_hi) else "includes 0")
 
@@ -1405,7 +1405,7 @@ _sep = "-" * _W
 
 # Abbreviation legend (printed at the top of each report section that uses them)
 _LEGEND = (
-    "  Legend: ROBUST = RobustModelMaker stability-selected subset  |  "
+    "  Legend: RMM = RobustModelMaker stability-selected subset  |  "
     "BL = Full-feature nested-CV baseline"
 )
 
@@ -1457,7 +1457,7 @@ def _significance_p(stat_df: pd.DataFrame) -> float:
 
 
 def _outcome(delta: float, stat_df: pd.DataFrame) -> str:
-    """Classify the ROBUST result relative to baseline.
+    """Classify the RMM result relative to baseline.
 
     The goal of RobustModelMaker is feature reduction while *preserving*
     predictive performance.  The stability-selected subset is robust across
@@ -1500,7 +1500,7 @@ def _paired_baseline_outcome(
         be computed (too few folds, all-zero differences, etc.).
     label : str
         One of "preserved", "sig. better *", "sig. worse *", matching the
-        convention used by `_outcome` for the ROBUST-vs-baseline comparison.
+        convention used by `_outcome` for the RMM-vs-baseline comparison.
 
     Notes
     -----
@@ -1584,22 +1584,22 @@ def print_scenario_report(
         return -s if is_reg else s
     print(f"  {'Baseline (BL)':<{lbl_w}}: {n_bl:5d} features   "
           f"{score_label} = {_disp(score_bl):.4f} +/- {baseline['std']:.4f}")
-    print(f"  {'ROBUST':<{lbl_w}}: {n_robust:5d} features   "
+    print(f"  {'RMM':<{lbl_w}}: {n_robust:5d} features   "
           f"{score_label} = {_disp(score_robust_mean):.4f} +/- {robust_result.nested_cv_result.std_score:.4f}")
     print(f"  {'Feature reduction':<{lbl_w}}: {reduction:5.1f}%   "
           f"({n_bl - n_robust} features removed)")
-    # delta is ROBUST - BL in neg-RMSE space; for display, positive delta = lower RMSE = better
+    # delta is RMM - BL in neg-RMSE space; for display, positive delta = lower RMSE = better
     delta_disp = -delta if is_reg else delta
-    delta_label = "RMSE delta (BL - ROBUST)" if is_reg else "Score delta (ROBUST - BL)"
+    delta_label = "RMSE delta (BL - RMM)" if is_reg else "Score delta (RMM - BL)"
     print(f"  {delta_label:<{lbl_w}}: {delta_disp:+.4f}   "
           f"p = {p_str}  ->  outcome: {outcome}")
     if is_reg:
-        print(f"  {'  (positive = ROBUST has lower RMSE)':<{lbl_w}}")
+        print(f"  {'  (positive = RMM has lower RMSE)':<{lbl_w}}")
     if abs(score_bl) > 1e-9 and n_bl > 0 and n_robust > 0:
         spf_robust = abs(score_robust_mean) / n_robust
         spf_bl = abs(score_bl) / n_bl
         print(f"  {'Efficiency gain':<{lbl_w}}: {spf_robust / max(spf_bl, 1e-15):.2f}x   "
-              f"score-per-feature (ROBUST / BL)")
+              f"score-per-feature (RMM / BL)")
     print(f"\n  Outcome key: 'preserved' = performance maintained with reduced features (p >= 0.05, primary goal); "
           f"'sig. worse *' = significant loss (p < 0.05)")
 
@@ -1626,11 +1626,11 @@ def print_scenario_report(
     # For regression display: convert neg-RMSE -> RMSE (positive, lower is better)
     r_disp = -robust_scores if is_reg else robust_scores
     bl_disp = -bl_scores[:n_folds] if is_reg else bl_scores[:n_folds]
-    # delta: positive = ROBUST is better in both cases after sign flip for regression
+    # delta: positive = RMM is better in both cases after sign flip for regression
     deltas_disp = bl_disp - r_disp if is_reg else r_disp - bl_disp
-    col_label = "ROBUST_RMSE" if is_reg else "ROBUST_score"
+    col_label = "RMM_RMSE" if is_reg else "RMM_score"
     bl_col_label = "BL_RMSE" if is_reg else "BL_score"
-    delta_col_label = "BL-ROBUST" if is_reg else "delta"
+    delta_col_label = "BL-RMM" if is_reg else "delta"
     fold_df = pd.DataFrame({
         "fold":           np.arange(1, n_folds + 1),
         col_label:        np.round(r_disp, 5),
@@ -1643,7 +1643,7 @@ def print_scenario_report(
     n_neg = int(np.sum(robust_scores < bl_scores[:n_folds] - 1e-6))
     n_tie = n_folds - n_pos - n_neg
     sign_str = f"+:{n_pos}  -:{n_neg}  ~:{n_tie}"
-    print(f"  Fold delta sign distribution (ROBUST vs BL):  {sign_str}  "
+    print(f"  Fold delta sign distribution (RMM vs BL):  {sign_str}  "
           f"(statistical significance determined by paired test above)")
 
     # ---- Statistical test battery ----
@@ -1698,9 +1698,9 @@ def print_scenario_report(
                 f"{int(round(n_feat)):>10d}  {red_s:>9}  {p_s:>10}  {out_s:<14}"
             )
 
-        # ROBUST row (paired test on the OUTER nested CV folds)
+        # RMM row (paired test on the OUTER nested CV folds)
         _cmp_row(
-            "ROBUST (stability-selected)",
+            "RMM (stability-selected)",
             robust_result.nested_cv_result.mean_score,
             robust_result.nested_cv_result.std_score,
             robust_stability,
@@ -1728,7 +1728,7 @@ def print_scenario_report(
 
 
 def print_summary_table(results: List[Dict[str, Any]]) -> None:
-    """ROBUST vs baseline cross-scenario summary (original compact table)."""
+    """RMM vs baseline cross-scenario summary (original compact table)."""
     C = dict(
         name=24, task=11, nxp=13,
         rob_n=12, red=5, stab=9,
@@ -1742,19 +1742,19 @@ def print_summary_table(results: List[Dict[str, Any]]) -> None:
     _tsep = "-" * _TW
 
     print(f"\n{_TSEP}")
-    print("  CROSS-SCENARIO SUMMARY  (ROBUST vs full-feature baseline)")
+    print("  CROSS-SCENARIO SUMMARY  (RMM vs full-feature baseline)")
     print(_TSEP)
     print(_LEGEND)
     print(f"  Goal: feature reduction while preserving predictive performance.")
     print(f"  Outcome: 'preserved' = no significant difference (p >= 0.05)  |  "
           f"'sig. worse *' = significant cost  |  'sig. better *' = improvement")
-    print(f"  Stability = mean pairwise Jaccard similarity of ROBUST feature sets across outer folds.")
+    print(f"  Stability = mean pairwise Jaccard similarity of RMM feature sets across outer folds.")
     print(_tsep)
     hdr = (
         f"  {'Scenario':<{C['name']}} {'Task':<{C['task']}} "
         f"{'n_train x p':>{C['nxp']}}  "
-        f"{'ROBUST feats':>{C['rob_n']}} {'Red%':>{C['red']}} {'Stability':>{C['stab']}}  "
-        f"{'BL score':>{C['bl_sc']}} {'ROBUST score':>{C['rob_sc']}} {'+delta':>{C['delta']}}  "
+        f"{'RMM feats':>{C['rob_n']}} {'Red%':>{C['red']}} {'Stability':>{C['stab']}}  "
+        f"{'BL score':>{C['bl_sc']}} {'RMM score':>{C['rob_sc']}} {'+delta':>{C['delta']}}  "
         f"{'p-val':>{C['pval']}} {'Outcome':<{C['outcome']}}"
     )
     print(hdr)
@@ -1815,7 +1815,7 @@ def print_comparator_summary(results: List[Dict[str, Any]]) -> None:
     print(_csep)
 
     # Build method list from first result that has comparators
-    method_order = ["ROBUST", "Baseline"]
+    method_order = ["RMM", "Baseline"]
     for r in results:
         for key, cres in (r.get("comparators") or {}).items():
             if cres is not None and cres.name not in method_order:
@@ -1851,7 +1851,7 @@ def print_comparator_summary(results: List[Dict[str, Any]]) -> None:
         for r in results:
             is_reg = r["task_type"] == "regression"
             n_bl = r["n_features_bl"]
-            if method_name == "ROBUST":
+            if method_name == "RMM":
                 rr = r["robust_result"]
                 row += "  " + _cell(
                     rr.nested_cv_result.mean_score,
@@ -1934,7 +1934,7 @@ def print_scenario_comparators(result: Dict[str, Any]) -> None:
         )
 
     _row(
-        "ROBUST (stability-selected)",
+        "RMM (stability-selected)",
         robust_result.nested_cv_result.mean_score,
         robust_result.nested_cv_result.std_score,
         robust_stab,
@@ -1962,26 +1962,26 @@ def print_scenario_comparators(result: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 def run_scenario(ds: BenchmarkDataset, verbose: bool = True) -> Dict[str, Any]:
-    """Fit ROBUST, full-feature baseline, and three comparators on one dataset."""
+    """Fit RMM, full-feature baseline, and three comparators on one dataset."""
     t0 = time.time()
 
     # Merge parameter layers (lowest → highest priority):
-    #   ROBUST_PARAMS  →  THRESHOLD_OVERRIDES[ds.name]  →  ds.robust_params_override
+    #   RMM_PARAMS  →  THRESHOLD_OVERRIDES[ds.name]  →  ds.robust_params_override
     _thr = THRESHOLD_OVERRIDES.get(ds.name)
     _thr_layer: Dict[str, Any] = {"stability_threshold": _thr} if _thr is not None else {}
-    scenario_params = {**ROBUST_PARAMS, **_thr_layer, **ds.robust_params_override}
-    _eff_thr = scenario_params.get("stability_threshold", ROBUST_PARAMS["stability_threshold"])
+    scenario_params = {**RMM_PARAMS, **_thr_layer, **ds.robust_params_override}
+    _eff_thr = scenario_params.get("stability_threshold", RMM_PARAMS["stability_threshold"])
 
     if verbose:
         print(
-            f"\n>>> {ds.name}: running ROBUST({ds.alg.upper()}, {ds.task_type}, "
+            f"\n>>> {ds.name}: running RMM({ds.alg.upper()}, {ds.task_type}, "
             f"thr={_eff_thr:.2f}) ...",
             flush=True,
         )
         if _thr is not None and "stability_threshold" not in ds.robust_params_override:
             print(
                 f"    threshold from THRESHOLD_OVERRIDES  "
-                f"(global default={ROBUST_PARAMS['stability_threshold']:.2f})",
+                f"(global default={RMM_PARAMS['stability_threshold']:.2f})",
                 flush=True,
             )
         if ds.robust_params_override:
@@ -1994,7 +1994,7 @@ def run_scenario(ds: BenchmarkDataset, verbose: bool = True) -> Dict[str, Any]:
         maker.fit(ds.X_train, ds.y_train)
     robust_result = maker.result_
 
-    # Jaccard stability for ROBUST: use the per-fold selected feature sets stored
+    # Jaccard stability for RMM: use the per-fold selected feature sets stored
     # in nested_cv_result, which are produced by the stability selection step
     # inside each outer fold of the nested CV.
     robust_fold_sets: List[Set[str]] = [
@@ -2005,7 +2005,7 @@ def run_scenario(ds: BenchmarkDataset, verbose: bool = True) -> Dict[str, Any]:
 
     if verbose:
         print(
-            f"    ROBUST done ({len(robust_result.selected_features)} features, "
+            f"    RMM done ({len(robust_result.selected_features)} features, "
             f"Jaccard stability={robust_stability:.3f}). Running baseline ...",
             flush=True,
         )
@@ -2091,7 +2091,7 @@ def run_scenario(ds: BenchmarkDataset, verbose: bool = True) -> Dict[str, Any]:
 #
 # These functions generate synthetic tabular datasets whose informative
 # features are known by construction.  They exist so that the four selectors
-# (ROBUST, ANOVA, RFECV, Boruta) can be scored not only on predictive accuracy
+# (RMM, ANOVA, RFECV, Boruta) can be scored not only on predictive accuracy
 # and selection stability but on whether they recover the *right* features:
 # the ones that actually drive the response, as opposed to correlated decoys
 # or pure-noise distractors.  Recovery is the only operational definition of
@@ -2418,7 +2418,7 @@ def intermethod_consensus(
     Parameters
     ----------
     method_fold_sets : dict
-        Maps method name (e.g. "ROBUST", "ANOVA k=14") to a list of per-fold
+        Maps method name (e.g. "RMM", "ANOVA k=14") to a list of per-fold
         selected feature sets.  Lists must all have the same length (K).
 
     Returns
@@ -2600,7 +2600,7 @@ def print_synthetic_recovery(result: Dict[str, Any]) -> None:
 
     robust_result = result["robust_result"]
     rfs = [set(s) for s in robust_result.nested_cv_result.selected_features_per_fold]
-    _row("ROBUST (stability-selected)", rfs)
+    _row("RMM (stability-selected)", rfs)
 
     for _, cres in (result.get("comparators") or {}).items():
         if cres is None:
@@ -2700,20 +2700,20 @@ class TestSECOM:
         reduction = 1.0 - r["n_features_robust"] / r["n_features_bl"]
         assert reduction >= 0.10, (
             f"Expected >=10% feature reduction on SECOM; got {reduction:.1%}. "
-            f"ROBUST selected {r['n_features_robust']}/{r['n_features_bl']} features."
+            f"RMM selected {r['n_features_robust']}/{r['n_features_bl']} features."
         )
 
     def test_robust_score_above_floor(self, secom_result):
         r = secom_result
         floor = r["dataset"].floor_score
         assert r["score_robust"] > floor, (
-            f"ROBUST AUC {r['score_robust']:.4f} should exceed floor {floor} on SECOM."
+            f"RMM AUC {r['score_robust']:.4f} should exceed floor {floor} on SECOM."
         )
 
     def test_robust_not_catastrophically_worse_than_baseline(self, secom_result):
         delta = secom_result["score_robust"] - secom_result["score_bl"]
         assert delta >= -0.15, (
-            f"ROBUST should not lose more than 0.15 AUC vs baseline; got {delta:+.4f}."
+            f"RMM should not lose more than 0.15 AUC vs baseline; got {delta:+.4f}."
         )
 
     def test_stability_frequencies_valid(self, secom_result):
@@ -2783,7 +2783,7 @@ class TestUrbanLandCover:
 
     def test_predict_returns_known_labels(self, urban_result):
         ds = urban_result["dataset"]
-        maker = robust.RobustModelMaker(alg=ds.alg, task_type=ds.task_type, **ROBUST_PARAMS)
+        maker = robust.RobustModelMaker(alg=ds.alg, task_type=ds.task_type, **RMM_PARAMS)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             maker.fit(ds.X_train, ds.y_train)
@@ -2802,7 +2802,7 @@ class TestUrbanLandCover:
         r = urban_result
         floor = r["dataset"].floor_score
         assert r["score_robust"] > floor, (
-            f"ROBUST AUC-OVR {r['score_robust']:.4f} should exceed floor {floor}."
+            f"RMM AUC-OVR {r['score_robust']:.4f} should exceed floor {floor}."
         )
 
     def test_class_names_stored(self, urban_result):
@@ -2837,7 +2837,7 @@ class TestUrbanLandCover:
         r = urban_result
         reduction = 1.0 - r["n_features_robust"] / r["n_features_bl"]
         assert reduction > 0.05, (
-            "Expected ROBUSTto drop at least some redundant imagery features."
+            "Expected RMM to drop at least some redundant imagery features."
         )
 
 
@@ -2885,7 +2885,7 @@ class TestGrapheneOxide:
         r = graphene_result
         floor = r["dataset"].floor_score
         assert r["score_robust"] > floor, (
-            f"ROBUST neg-RMSE {r['score_robust']:.4f} should exceed floor {floor}."
+            f"RMM neg-RMSE {r['score_robust']:.4f} should exceed floor {floor}."
         )
 
     def test_formation_energy_target_in_valid_range(self, graphene_result):
@@ -2903,7 +2903,7 @@ class TestGrapheneOxide:
 
     def test_predict_returns_series(self, graphene_result):
         ds = graphene_result["dataset"]
-        maker = robust.RobustModelMaker(alg=ds.alg, task_type=ds.task_type, **ROBUST_PARAMS)
+        maker = robust.RobustModelMaker(alg=ds.alg, task_type=ds.task_type, **RMM_PARAMS)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             maker.fit(ds.X_train, ds.y_train)
@@ -2914,7 +2914,7 @@ class TestGrapheneOxide:
 
     def test_predict_proba_raises_for_regression(self, graphene_result):
         ds = graphene_result["dataset"]
-        maker = robust.RobustModelMaker(alg=ds.alg, task_type=ds.task_type, **ROBUST_PARAMS)
+        maker = robust.RobustModelMaker(alg=ds.alg, task_type=ds.task_type, **RMM_PARAMS)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             maker.fit(ds.X_train, ds.y_train)
@@ -2988,7 +2988,7 @@ class TestCrossScenario:
         self, secom_result, urban_result, graphene_result
     ):
         for r in (secom_result, urban_result, graphene_result):
-            assert np.isfinite(r["score_robust"]), f"{r['name']}: ROBUST score is not finite."
+            assert np.isfinite(r["score_robust"]), f"{r['name']}: RMM score is not finite."
             assert np.isfinite(r["score_bl"]), f"{r['name']}: BL score is not finite."
 
     def test_stat_battery_consistent_across_scenarios(
@@ -3104,7 +3104,7 @@ class TestComparators:
             pytest.skip("boruta package not installed")
         assert 0.0 <= cr.stability <= 1.0
 
-    # ---- ROBUST stability ----
+    # ---- RMM stability ----
 
     def test_robust_stability_in_unit_interval(self, secom_result):
         s = secom_result["robust_stability"]
@@ -3152,10 +3152,10 @@ class TestComparators:
 
 if __name__ == "__main__":
     print(_SEP)
-    print("  ROBUST MODEL MAKER -- SCIENTIFIC BENCHMARK DEMONSTRATION")
+    print("  RobustModelMaker -- SCIENTIFIC BENCHMARK DEMONSTRATION")
     print(f"  Outer CV={_OUTER_CV}  Inner CV={_INNER_CV}  "
-          f"N-bootstrap={ROBUST_PARAMS['n_bootstrap']}  N-iter={_N_ITER}  "
-          f"Stability threshold={ROBUST_PARAMS['stability_threshold']}")
+          f"N-bootstrap={RMM_PARAMS['n_bootstrap']}  N-iter={_N_ITER}  "
+          f"Stability threshold={RMM_PARAMS['stability_threshold']}")
     print(_SEP)
     print(_LEGEND)
     print(f"  Goal: feature reduction while preserving predictive performance.")

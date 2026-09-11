@@ -1,0 +1,9 @@
+section,attribute,value,description
+top_level,task_type,regression,Resolved modelling task
+top_level,algorithm,rf,Algorithm used
+top_level,calibration,none,Probability calibration method
+top_level,n_selected_features,36,Number of consensus selected features
+nested_cv,metric,neg_root_mean_squared_error,Primary nested CV scoring metric
+nested_cv,mean_score,-10.783137296806647,Mean outer-fold score
+nested_cv,std_score,0.15547354308886213,Standard deviation across outer folds
+nested_cv,repeats,1,Number of repeated outer CV runs

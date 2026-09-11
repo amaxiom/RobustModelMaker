@@ -17,7 +17,7 @@ The three objectives are in natural tension:
 This optimizer sweeps a configurable grid of threshold values, runs a full
 RobustModelMaker nested-CV fit at each point, and records three metrics:
 
-  1. **Predictive score**: mean outer-fold AUC (classification) or neg-RMSE
+  1. **Predictive score** : mean outer-fold AUC (classification) or neg-RMSE
      (regression).  Higher is always better in both cases.
   2. **Jaccard stability**: mean pairwise feature-set similarity across outer
      folds (Nogueira et al. 2018).  1 = identical selection every fold.
@@ -75,7 +75,6 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import sys
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -90,64 +89,35 @@ import pandas as pd
 # Locate and import RobustModelMaker
 # ---------------------------------------------------------------------------
 
-def _import_robust_module() -> Any:
-    """Find RobustModelMaker.py and return its module object.
+import sys
+from typing import Any
 
-    Search order:
-      1. ROBUST_MODEL_MAKER_PATH env var (explicit override)
-      2. Same directory as this file        (tools/)
-      3. Parent directory of this file      (RobustModelMaker/, standard layout)
-      4. Grandparent directory              (fallback)
-      5. Standard import via sys.path       (import RobustModelMaker)
-      6. PyPI package name                  (import robustmodelmaker)
-    """
+def _import_robust_module() -> Any:
+    """Import the robustmodelmaker pip package and return it as a module."""
     _KEY = "RobustModelMaker"
+    
+    # 1. If the uppercase alias is already in sys.modules, return it
     if _KEY in sys.modules:
         return sys.modules[_KEY]
 
-    here = Path(__file__).resolve().parent
-    candidates: List[Path] = []
-
-    env = os.environ.get("ROBUST_MODEL_MAKER_PATH")
-    if env:
-        candidates.append(Path(env))
-
-    candidates += [
-        here            / f"{_KEY}.py",   # tools/RobustModelMaker.py    (unlikely)
-        here.parent     / f"{_KEY}.py",   # RobustModelMaker/             (expected)
-        here.parent.parent / f"{_KEY}.py",# one level higher              (fallback)
-    ]
-
-    for path in candidates:
-        if path.is_file():
-            spec = importlib.util.spec_from_file_location(_KEY, path)
-            mod  = importlib.util.module_from_spec(spec)           # type: ignore[arg-type]
-            sys.modules[_KEY] = mod
-            spec.loader.exec_module(mod)                           # type: ignore[union-attr]
-            return mod
-
     try:
-        import RobustModelMaker as _rm
-        return _rm
-    except ImportError:
-        pass
-
-    try:
-        import robustmodelmaker as _rm          # PyPI package name (pip install robustmodelmaker)
+        # 2. Import the actual lowercase pip package
+        import robustmodelmaker as _rm
+        
+        # 3. Create the uppercase module link in sys.modules to satisfy the code
+        sys.modules[_KEY] = _rm
         return _rm
     except ImportError:
         raise ImportError(
-            "Cannot locate RobustModelMaker.\n"
-            "  Option 1: install via pip: pip install robustmodelmaker\n"
-            "  Option 2: place threshold_optimizer.py one level above RobustModelMaker.py.\n"
-            "  Option 3: set the ROBUST_MODEL_MAKER_PATH env var to the full .py path.\n"
-            "  Option 4: add RobustModelMaker's directory to sys.path before importing."
+            "Cannot locate the robustmodelmaker package.\n"
+            "Please ensure it is installed in your environment using: pip install robustmodelmaker"
         )
 
+# Run the function to grab the module object safely
+_rm_module = _import_robust_module()
 
-_rm_module       = _import_robust_module()
+# Extract the RobustModelMaker class from the module top-level
 RobustModelMaker = _rm_module.RobustModelMaker
-
 
 # ---------------------------------------------------------------------------
 # Defaults

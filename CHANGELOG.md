@@ -4,6 +4,51 @@ All notable changes to RobustModelMaker are documented here.
 
 ---
 
+## v0.3.4 (2026-09-11)
+
+Nomenclature release. The abbreviation for RobustModelMaker is now **RMM**
+throughout; **ROBUST** is retired. No behavioural change, no API change, and no
+change to any numerical result: all 225 tests pass and statement coverage of
+`RobustModelMaker.py` remains 100 per cent.
+
+### Changed
+
+- Every prose, docstring, comment and console-output use of `ROBUST` as the
+  abbreviation is now `RMM`, across the README, the PyPI README, all three guides,
+  the benchmark suite, the tools modules, the test suites and the notebook source
+  cells.
+- The results banner spelled the product name out in capitals as
+  `ROBUST MODEL MAKER`. Because that is the full name rather than the abbreviation,
+  it is now `RobustModelMaker`:
+  `RobustModelMaker v0.3 RESULTS` and `RobustModelMaker RESULTS SUMMARY`.
+  The three test assertions that pin those banners were updated to match.
+- Benchmark tooling identifiers renamed, with every reference in this repository
+  updated together: `ROBUST_PARAMS` is now `RMM_PARAMS`, and the display column
+  labels `ROBUST_score` and `ROBUST_RMSE` are now `RMM_score` and `RMM_RMSE`.
+- Fixed a missing space in a benchmark docstring, where `ROBUSTto` is now `RMM to`.
+
+### Deliberately unchanged
+
+These keep the `ROBUST` spelling, because renaming them would break an environment
+that is already set or a caller outside this repository:
+
+- `ROBUST_MODEL_MAKER_PATH`, the import-path override read by every test suite, by
+  `tools/threshold_optimizer.py`, and by the copy of that file under
+  `Ovarian_Cancer/Study_14_OC500New_Proteomics`. This spells the full product name
+  rather than the abbreviation, so it is outside the scope of the change in any case.
+- The performance suite's environment variables: `ROBUST_PERF_STRICT`,
+  `ROBUST_PERF_BASELINE`, `ROBUST_PERF_DIR`, `ROBUST_PERF_BUDGET_SECONDS`,
+  `ROBUST_PERF_MEMORY_MB` and `ROBUST_PERF_REGRESSION_FACTOR`.
+- The private internals `_ROBUST_ORIGINAL_RUN_PIPELINE` and `_ROBUST_ORIGINAL_INIT`,
+  which no caller can reach.
+
+Stored notebook outputs still show the old `ROBUST` wording, because they are the
+recorded result of an earlier run and were left untouched rather than edited to
+misrepresent what was produced. They will pick up the new wording when the notebooks
+are next executed.
+
+---
+
 ## v0.3.3 (2026-09-11)
 
 Maintenance and documentation release. No change to the public API, and no change to
@@ -144,7 +189,7 @@ Documentation-only release. No library code changes; `RobustModelMaker.py` is by
 
 ### Changed
 
-- All three benchmark datasets (SECOM, Urban Land Cover, Graphene Oxide) now use Random Forest (`rf`) for both the ROBUST run and the full-feature baseline, isolating the effect of bootstrap stability selection from algorithm differences
+- All three benchmark datasets (SECOM, Urban Land Cover, Graphene Oxide) now use Random Forest (`rf`) for both the RMM run and the full-feature baseline, isolating the effect of bootstrap stability selection from algorithm differences
 - Documentation corrections in Implementation Guide: `las` solver and default `C`; `svm` estimator class (`SVC` with `kernel="linear"`, not `LinearSVC`); `mlp` importance method (first-layer weight magnitudes, not permutation importance); preprocessing notes for `rdg`, `las`, `log`, `svm`, `mlp`, and `lin` under default `preprocess="auto"`
 
 ---
