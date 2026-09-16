@@ -8,6 +8,14 @@
 
 RobustModelMaker (RMM) combines bootstrap stability selection with leakage-safe nested cross-validation to identify a stable, minimal feature subset and produce honest performance estimates. It is designed for scientific datasets where reproducibility, interpretability, and honest generalisation estimates matter as much as raw predictive performance.
 
+First sibling in the RobustMaker family:
+
+| Package | Selects | Data |
+|---|---|---|
+| RobustModelMaker (RMM) | columns | tabular features |
+| [RobustPixelMaker](https://github.com/amaxiom/RobustPixelMaker) (RPM) | patches | scientific images |
+| [RobustSignalMaker](https://github.com/amaxiom/RobustSignalMaker) (RSM) | points and bands | signals and spectra |
+
 ---
 
 ## Why RobustModelMaker?
